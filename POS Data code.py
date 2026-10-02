@@ -10,18 +10,52 @@ import streamlit as st
 # ============================================================
 # Page Config
 # ============================================================
+import streamlit as st
+
 st.set_page_config(
     page_title="POS Monthly Data Mapping",
-    page_icon="📊",
+    page_icon="🥃",
     layout="wide",
 )
 
-st.title("📊 POS Monthly Data Mapping")
-st.caption(
-    "POS Data 每月上傳"
-    "Customer Mapping SKU Mapping。"
+# ============================================================
+# HEADER
+# ============================================================
+
+header_col1, header_col2 = st.columns(
+    [1, 7],
+    vertical_alignment="center"
 )
 
+with header_col1:
+    st.image(
+        "logo.png",
+        width=110,
+    )
+
+with header_col2:
+    st.markdown(
+        """
+        <h1 style="
+            margin-bottom: 0;
+            padding-bottom: 0;
+        ">
+            POS Monthly Data Mapping
+        </h1>
+
+        <p style="
+            color: grey;
+            font-size: 16px;
+            margin-top: 4px;
+        ">
+            Monthly POS Data Integration,
+            Mapping & Submission Dashboard
+        </p>
+        """,
+        unsafe_allow_html=True,
+    )
+
+st.divider()
 
 # ============================================================
 # Final Output Columns
