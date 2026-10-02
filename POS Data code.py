@@ -2990,51 +2990,74 @@ successful_files = int(
 
 
 # ============================================================
-# Dashboard
 # ============================================================
-st.divider()
+# STEP 3 - DASHBOARD
+# ============================================================
 
-st.subheader(
-    "📊 Dashboard"
+section_header(
+    "3",
+    "Dashboard",
+    "Data volume, mapping quality and file processing status",
 )
 
-d1, d2, d3, d4, d5, d6 = (
-    st.columns(6)
-)
 
-d1.metric(
-    "來源資料",
-    f"{source_count:,}",
-)
+# ============================================================
+# KPI ROW
+# ============================================================
 
-d2.metric(
-    "輸出資料",
-    f"{output_count:,}",
-    delta=(
-        f"{output_count - source_count:+,}"
-    ),
-)
+d1, d2, d3 = st.columns(3)
+d4, d5, d6 = st.columns(3)
 
-d3.metric(
-    "Customer Unmapped",
-    f"{customer_unmapped:,}",
-)
 
-d4.metric(
-    "SKU Unmapped",
-    f"{sku_unmapped:,}",
-)
+with d1:
 
-d5.metric(
-    "成功檔案",
-    f"{successful_files:,}",
-)
+    st.metric(
+        "📥 來源資料",
+        f"{source_count:,}",
+    )
 
-d6.metric(
-    "失敗檔案",
-    f"{failed_files:,}",
-)
 
+with d2:
+
+    st.metric(
+        "📤 輸出資料",
+        f"{output_count:,}",
+        delta=(
+            f"{output_count - source_count:+,}"
+        ),
+    )
+
+
+with d3:
+
+    st.metric(
+        "🏪 Customer Unmapped",
+        f"{customer_unmapped:,}",
+    )
+
+
+with d4:
+
+    st.metric(
+        "🧩 SKU Unmapped",
+        f"{sku_unmapped:,}",
+    )
+
+
+with d5:
+
+    st.metric(
+        "✅ 成功檔案",
+        f"{successful_files:,}",
+    )
+
+
+with d6:
+
+    st.metric(
+        "❌ 失敗檔案",
+        f"{failed_files:,}",
+    )
 
 # ============================================================
 # Reconciliation
