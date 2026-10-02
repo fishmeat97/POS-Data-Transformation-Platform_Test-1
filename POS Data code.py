@@ -2263,122 +2263,967 @@ q3.metric(
 
 
 # ============================================================
-# Submission Tracker
+# DASHBOARD
 # ============================================================
-st.subheader(
-    "📥 業務繳交狀況"
+
+st.divider()
+
+st.title("📊 Monthly POS Dashboard")
+
+
+# ============================================================
+# 1. Detect Current Reporting Period
+# ============================================================
+
+valid_periods = (
+    upload_log["年月"]
+    .astype(str)
+    .replace("", pd.NA)
+    .dropna()
+    .unique()
 )
 
-submission = (
+if len(valid_periods) > 0:
+
+    reporting_period = sorted(
+        valid_periods
+    )[-1]
+
+else:
+
+    reporting_period = ""
+
+
+# ============================================================
+# 2. Build Expected Submission List
+#
+# Customer Mapping = expected submission population
+# ============================================================
+
+expected_submission = (
+    customer_map[
+        [
+            "Sales ID",
+            "Sales",
+            "Contract JDE",
+            "Contract NAME",
+            "Outlet No",
+            "Outlet NAME",
+            "Rawdata Name",
+        ]
+    ]
+    .copy()
+)
+
+
+# ------------------------------------------------------------
+# Normalize Keys
+# ------------------------------------------------------------
+
+expected_submission[
+    "SALES_KEY"
+] = (
+    expected_submission[
+        "Sales ID"
+    ]
+    .map(norm_key)
+)
+
+
+expected_submission[
+    "CONTRACT_KEY"
+] = (
+    expected_submission[
+        "Contract JDE"
+    ]
+    .map(norm_key)
+)
+
+
+expected_submission[
+    "OUTLET_KEY"
+] = (
+    expected_submission[
+        "Outlet No"
+    ]
+    .map(norm_key)
+)
+
+
+expected_submission[
+    "EXPECTED_KEY"
+] = (
+
+    expected_submission[
+        "SALES_KEY"
+    ]
+
+    + "|"
+
+    + expected_submission[
+        "CONTRACT_KEY"
+    ]
+
+    + "|"
+
+    + expected_submission[
+        "OUTLET_KEY"
+    ]
+)
+
+
+# ------------------------------------------------------------
+# Remove duplicate expected submissions
+# ------------------------------------------------------------
+
+expected_submission = (
+    expected_submission
+    .drop_duplicates(
+        subset=[
+            "EXPECTED_KEY"
+        ]
+    )
+    .reset_index(
+        drop=True
+    )
+)
+
+
+# ============================================================
+# 3. Build Actual Upload Key
+# ============================================================
+
+actual_upload = (
     upload_log
+    .copy()
+)
+
+
+actual_upload[
+    "SALES_KEY"
+] = (
+    actual_upload[
+        "業務代號"
+    ]
+    .map(norm_key)
+)
+
+
+actual_upload[
+    "CONTRACT_KEY"
+] = (
+    actual_upload[
+        "合約編號"
+    ]
+    .map(norm_key)
+)
+
+
+actual_upload[
+    "OUTLET_KEY"
+] = (
+    actual_upload[
+        "店家編號"
+    ]
+    .map(norm_key)
+)
+
+
+actual_upload[
+    "UPLOAD_KEY"
+] = (
+
+    actual_upload[
+        "SALES_KEY"
+    ]
+
+    + "|"
+
+    + actual_upload[
+        "CONTRACT_KEY"
+    ]
+
+    + "|"
+
+    + actual_upload[
+        "OUTLET_KEY"
+    ]
+)
+
+
+# ============================================================
+# 4. Merge Expected vs Actual
+# ============================================================
+
+submission_detail = (
+    expected_submission
+    .merge(
+
+        actual_upload[
+            [
+                "UPLOAD_KEY",
+                "檔案",
+                "辨識格式",
+                "狀態",
+                "錯誤",
+                "原始筆數",
+                "年月",
+                "檔名格式",
+            ]
+        ],
+
+        how="left",
+
+        left_on="EXPECTED_KEY",
+
+        right_on="UPLOAD_KEY",
+    )
+)
+
+
+# ============================================================
+# 5. Submission Status
+# ============================================================
+
+def get_submission_status(row):
+
+    if pd.isna(
+        row.get(
+            "檔案"
+        )
+    ):
+
+        return "MISSING"
+
+    if (
+        row.get(
+            "狀態"
+        )
+        == "SUCCESS"
+    ):
+
+        return "SUCCESS"
+
+    return "FAILED"
+
+
+submission_detail[
+    "SUBMISSION_STATUS"
+] = (
+    submission_detail
+    .apply(
+        get_submission_status,
+        axis=1,
+    )
+)
+
+
+# ============================================================
+# 6. Dashboard KPI
+# ============================================================
+
+expected_count = len(
+    expected_submission
+)
+
+
+success_count = int(
+    (
+        submission_detail[
+            "SUBMISSION_STATUS"
+        ]
+        == "SUCCESS"
+    )
+    .sum()
+)
+
+
+missing_count = int(
+    (
+        submission_detail[
+            "SUBMISSION_STATUS"
+        ]
+        == "MISSING"
+    )
+    .sum()
+)
+
+
+submission_failed_count = int(
+    (
+        submission_detail[
+            "SUBMISSION_STATUS"
+        ]
+        == "FAILED"
+    )
+    .sum()
+)
+
+
+source_count = len(
+    raw_all
+)
+
+
+output_count = len(
+    final_report
+)
+
+
+customer_unmapped = int(
+
+    detail[
+        "CUSTOMER_MAPPING_STATUS"
+    ]
+    .eq(
+        "UNMAPPED"
+    )
+    .sum()
+)
+
+
+sku_unmapped = int(
+
+    detail[
+        "SKU_MAPPING_STATUS"
+    ]
+    .eq(
+        "UNMAPPED"
+    )
+    .sum()
+)
+
+
+# ============================================================
+# KPI ROW 1
+# ============================================================
+
+st.subheader(
+    f"📅 Reporting Period: {reporting_period}"
+)
+
+
+kpi1, kpi2, kpi3, kpi4 = (
+    st.columns(4)
+)
+
+
+kpi1.metric(
+    "📋 本月應繳",
+    f"{expected_count:,}",
+)
+
+
+kpi2.metric(
+    "✅ 成功繳交",
+    f"{success_count:,}",
+)
+
+
+kpi3.metric(
+    "⏳ 尚未繳交",
+    f"{missing_count:,}",
+)
+
+
+kpi4.metric(
+    "❌ 上傳失敗",
+    f"{submission_failed_count:,}",
+)
+
+
+# ============================================================
+# KPI ROW 2
+# ============================================================
+
+kpi5, kpi6, kpi7, kpi8 = (
+    st.columns(4)
+)
+
+
+kpi5.metric(
+    "📥 原始資料筆數",
+    f"{source_count:,}",
+)
+
+
+kpi6.metric(
+    "📤 最終輸出筆數",
+    f"{output_count:,}",
+    delta=(
+        f"{output_count - source_count:+,}"
+    ),
+)
+
+
+kpi7.metric(
+    "🧩 SKU Unmapped",
+    f"{sku_unmapped:,}",
+)
+
+
+kpi8.metric(
+    "🏪 Customer Unmapped",
+    f"{customer_unmapped:,}",
+)
+
+
+# ============================================================
+# 7. Data Reconciliation
+# ============================================================
+
+st.subheader(
+    "🔐 Data Reconciliation"
+)
+
+
+if (
+    source_count
+    == output_count
+):
+
+    st.success(
+
+        f"""
+        ✅ 資料筆數核對成功
+
+        原始資料：{source_count:,} 筆  
+        最終輸出：{output_count:,} 筆  
+
+        差異：0 筆
+        """
+    )
+
+else:
+
+    difference = (
+        output_count
+        - source_count
+    )
+
+    st.error(
+
+        f"""
+        ❌ 資料筆數不一致
+
+        原始資料：{source_count:,} 筆  
+        最終輸出：{output_count:,} 筆  
+
+        差異：{difference:+,} 筆
+        """
+    )
+
+
+# ============================================================
+# 8. Mapping Completion Rate
+# ============================================================
+
+st.subheader(
+    "🧩 Mapping Completion"
+)
+
+
+if source_count > 0:
+
+    customer_mapping_rate = (
+
+        (
+            source_count
+            - customer_unmapped
+        )
+        / source_count
+    )
+
+
+    sku_mapping_rate = (
+
+        (
+            source_count
+            - sku_unmapped
+        )
+        / source_count
+    )
+
+else:
+
+    customer_mapping_rate = 0
+
+    sku_mapping_rate = 0
+
+
+mapping_col1, mapping_col2 = (
+    st.columns(2)
+)
+
+
+with mapping_col1:
+
+    st.write(
+        "Customer Mapping"
+    )
+
+    st.progress(
+        customer_mapping_rate
+    )
+
+    st.caption(
+
+        f"""
+        {customer_mapping_rate:.2%}
+        Mapped
+
+        Unmapped:
+        {customer_unmapped:,}
+        """
+    )
+
+
+with mapping_col2:
+
+    st.write(
+        "SKU Mapping"
+    )
+
+    st.progress(
+        sku_mapping_rate
+    )
+
+    st.caption(
+
+        f"""
+        {sku_mapping_rate:.2%}
+        Mapped
+
+        Unmapped:
+        {sku_unmapped:,}
+        """
+    )
+
+
+# ============================================================
+# 9. Sales Submission Progress
+# ============================================================
+
+st.subheader(
+    "👤 業務繳交進度"
+)
+
+
+sales_submission = (
+
+    submission_detail
+
     .groupby(
         [
-            "業務代號",
-            "合約編號",
-            "年月",
+            "Sales ID",
+            "Sales",
         ],
         dropna=False,
         as_index=False,
     )
+
     .agg(
-        檔案數=(
-            "檔案",
+
+        應繳=(
+            "EXPECTED_KEY",
             "count",
         ),
 
-        成功檔案=(
-            "狀態",
+        成功=(
+            "SUBMISSION_STATUS",
             lambda x:
                 int(
                     (
-                        x == "SUCCESS"
+                        x
+                        == "SUCCESS"
                     ).sum()
                 ),
         ),
 
-        失敗檔案=(
-            "狀態",
+        失敗=(
+            "SUBMISSION_STATUS",
             lambda x:
                 int(
                     (
-                        x == "FAILED"
+                        x
+                        == "FAILED"
                     ).sum()
                 ),
         ),
 
-        資料筆數=(
-            "原始筆數",
-            "sum",
+        未繳=(
+            "SUBMISSION_STATUS",
+            lambda x:
+                int(
+                    (
+                        x
+                        == "MISSING"
+                    ).sum()
+                ),
         ),
     )
 )
 
-submission[
-    "繳交狀態"
-] = submission.apply(
-    lambda row:
-    (
+
+sales_submission[
+    "完成率"
+] = (
+
+    sales_submission[
         "成功"
-        if (
-            row["失敗檔案"] == 0
-            and row["成功檔案"] > 0
-        )
-        else (
-            "部分失敗"
-            if row["成功檔案"] > 0
-            else "失敗"
-        )
-    ),
-    axis=1,
+    ]
+
+    /
+
+    sales_submission[
+        "應繳"
+    ]
 )
 
+
+sales_submission[
+    "完成率"
+] = (
+
+    sales_submission[
+        "完成率"
+    ]
+    .fillna(0)
+)
+
+
+sales_submission[
+    "完成率 %"
+] = (
+
+    sales_submission[
+        "完成率"
+    ]
+    .apply(
+        lambda x:
+            f"{x:.1%}"
+    )
+)
+
+
+# ============================================================
+# Overall Submission Progress
+# ============================================================
+
+if expected_count > 0:
+
+    overall_completion = (
+        success_count
+        / expected_count
+    )
+
+else:
+
+    overall_completion = 0
+
+
+st.write(
+    "### Overall Submission Progress"
+)
+
+
+st.progress(
+    overall_completion
+)
+
+
+st.caption(
+    f"{success_count:,} / {expected_count:,} "
+    f"({overall_completion:.1%})"
+)
+
+
+# ============================================================
+# Sales Table
+# ============================================================
+
 st.dataframe(
-    submission,
+
+    sales_submission[
+        [
+            "Sales ID",
+            "Sales",
+            "應繳",
+            "成功",
+            "失敗",
+            "未繳",
+            "完成率 %",
+        ]
+    ],
+
     use_container_width=True,
+
     hide_index=True,
 )
 
 
 # ============================================================
-# Upload Status
+# 10. Submission Status Distribution
 # ============================================================
+
 st.subheader(
-    "📁 上傳狀況"
+    "📊 繳交狀況分布"
 )
+
+
+status_summary = (
+
+    submission_detail[
+        "SUBMISSION_STATUS"
+    ]
+
+    .value_counts()
+
+    .rename_axis(
+        "Status"
+    )
+
+    .reset_index(
+        name="Count"
+    )
+)
+
+
+st.bar_chart(
+    status_summary,
+    x="Status",
+    y="Count",
+)
+
+
+# ============================================================
+# 11. Shop Submission Detail
+# ============================================================
+
+st.subheader(
+    "🏪 店家繳交明細"
+)
+
+
+shop_detail = (
+    submission_detail[
+        [
+            "Sales ID",
+            "Sales",
+            "Contract JDE",
+            "Contract NAME",
+            "Outlet No",
+            "Outlet NAME",
+            "Rawdata Name",
+            "年月",
+            "檔案",
+            "辨識格式",
+            "SUBMISSION_STATUS",
+            "錯誤",
+        ]
+    ]
+    .copy()
+)
+
+
+shop_detail = (
+    shop_detail
+    .rename(
+        columns={
+
+            "Sales ID":
+                "業務代號",
+
+            "Sales":
+                "業務員",
+
+            "Contract JDE":
+                "合約編號",
+
+            "Contract NAME":
+                "合約名稱",
+
+            "Outlet No":
+                "店家編號",
+
+            "Outlet NAME":
+                "店家名稱",
+
+            "Rawdata Name":
+                "Rawdata Name",
+
+            "SUBMISSION_STATUS":
+                "繳交狀態",
+        }
+    )
+)
+
+
+# ============================================================
+# Status Filter
+# ============================================================
+
+status_filter = st.multiselect(
+
+    "篩選繳交狀態",
+
+    options=[
+        "SUCCESS",
+        "FAILED",
+        "MISSING",
+    ],
+
+    default=[
+        "SUCCESS",
+        "FAILED",
+        "MISSING",
+    ],
+)
+
+
+filtered_shop_detail = (
+
+    shop_detail[
+
+        shop_detail[
+            "繳交狀態"
+        ]
+        .isin(
+            status_filter
+        )
+    ]
+)
+
 
 st.dataframe(
-    upload_log,
+
+    filtered_shop_detail,
+
     use_container_width=True,
+
     hide_index=True,
+
+    height=450,
 )
 
 
 # ============================================================
-# Audit Columns
+# 12. Upload Health
 # ============================================================
-audit_columns = [
-    "SOURCE_FILE",
-    "SOURCE_ROW",
-    "TEMPLATE_TYPE",
-    "FILE_SALES_ID",
-    "FILE_CONTRACT_JDE",
-    "FILE_OUTLET_NO",
-    "FILE_RAWDATA_NAME",
-    "RAW_CUSTOMER",
-    "RAW_ROW_CUSTOMER",
-    "RAW_SKU",
-    "CUSTOMER_MAPPING_STATUS",
-    "SKU_MAPPING_STATUS",
-    "SALES_ID_CHECK",
-    "CONTRACT_CHECK",
-]
 
-audit_columns = [
-    column
-    for column in audit_columns
-    if column in detail.columns
-]
+st.subheader(
+    "📁 檔案上傳狀況"
+)
 
+
+upload_health = (
+    upload_log[
+        [
+            "檔案",
+            "辨識格式",
+            "狀態",
+            "原始筆數",
+            "業務代號",
+            "合約編號",
+            "年月",
+            "店家編號",
+            "分店/Rawdata Name",
+            "檔名格式",
+            "錯誤",
+        ]
+    ]
+)
+
+
+st.dataframe(
+
+    upload_health,
+
+    use_container_width=True,
+
+    hide_index=True,
+
+    height=400,
+)
+
+
+# ============================================================
+# Upload Failure Warning
+# ============================================================
+
+failed_uploads = (
+
+    upload_log[
+
+        upload_log[
+            "狀態"
+        ]
+        == "FAILED"
+    ]
+)
+
+
+if len(
+    failed_uploads
+) > 0:
+
+    st.error(
+
+        f"""
+        ⚠️ 有 {len(failed_uploads):,} 個檔案處理失敗，
+        請至「檔案上傳狀況」查看錯誤訊息。
+        """
+    )
+
+
+# ============================================================
+# 13. Mapping Exceptions
+# ============================================================
+
+st.subheader(
+    "⚠️ Data Quality Exceptions"
+)
+
+
+exception1, exception2, exception3 = (
+    st.columns(3)
+)
+
+
+exception1.metric(
+
+    "SKU Unmapped",
+
+    f"{sku_unmapped:,}"
+)
+
+
+exception2.metric(
+
+    "Customer Unmapped",
+
+    f"{customer_unmapped:,}"
+)
+
+
+filename_error_count = int(
+
+    (
+        upload_log[
+            "檔名格式"
+        ]
+        != "OK"
+    )
+    .sum()
+)
+
+
+exception3.metric(
+
+    "檔名格式異常",
+
+    f"{filename_error_count:,}"
+)
 
 # ============================================================
 # Preview
