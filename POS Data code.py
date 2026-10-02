@@ -242,6 +242,28 @@ def numeric(series):
     )
 
 
+def norm_id_key(value):
+
+    if pd.isna(value):
+        return ""
+
+    text = str(value).strip()
+
+    # 31020549.0 -> 31020549
+    if re.fullmatch(
+        r"\d+\.0+",
+        text,
+    ):
+        text = text.split(".")[0]
+
+    text = re.sub(
+        r"[^\w]+",
+        "",
+        text,
+    )
+
+    return text.upper()
+
 # ============================================================
 # Filename Parser
 #
