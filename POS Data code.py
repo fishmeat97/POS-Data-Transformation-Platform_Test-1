@@ -2550,55 +2550,31 @@ def excel_bytes(sheets):
 # STEP 1 - Upload Monthly Template
 # ============================================================
 
+# ============================================================
+# STEP 1 - Upload Monthly Template
+# ============================================================
+
 st.markdown(
-    """
-    <div style="
-        background: linear-gradient(90deg, rgba(80,80,80,0.10), rgba(80,80,80,0.03));
-        padding: 18px 22px;
-        border-radius: 14px;
-        border: 1px solid rgba(128,128,128,0.18);
-        margin-bottom: 14px;
-    ">
-        <div style="
-            display: flex;
-            align-items: center;
-            gap: 14px;
-        ">
-            <div style="
-                width: 42px;
-                height: 42px;
-                border-radius: 50%;
-                background: rgba(120,120,120,0.18);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 22px;
-                font-weight: 700;
-            ">
-                1
-            </div>
-
-            <div>
-                <div style="
-                    font-size: 23px;
-                    font-weight: 700;
-                    margin-bottom: 2px;
-                ">
-                    上傳當月份資料
-                </div>
-
-                <div style="
-                    font-size: 14px;
-                    color: #888;
-                ">
-                    Upload monthly POS templates
-                </div>
-            </div>
-        </div>
-    </div>
-    """,
+"""
+<div style="background: linear-gradient(90deg, rgba(80,80,80,0.10), rgba(80,80,80,0.03)); padding: 18px 22px; border-radius: 14px; border: 1px solid rgba(128,128,128,0.18); margin-bottom: 14px;">
+<div style="display: flex; align-items: center; gap: 14px;">
+<div style="width: 42px; height: 42px; border-radius: 50%; background: rgba(120,120,120,0.18); display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700;">
+1
+</div>
+<div>
+<div style="font-size: 23px; font-weight: 700; margin-bottom: 2px;">
+上傳當月份資料
+</div>
+<div style="font-size: 14px; color: #888;">
+Upload monthly POS templates
+</div>
+</div>
+</div>
+</div>
+""",
     unsafe_allow_html=True,
 )
+
 
 template_files = st.file_uploader(
     "可一次上傳多個 Excel / CSV Template",
@@ -2611,6 +2587,7 @@ template_files = st.file_uploader(
     key="templates",
 )
 
+
 st.caption(
     "系統會自動辨識不同 Template 格式，不需要人工選擇格式。"
 )
@@ -2621,57 +2598,29 @@ st.caption(
 # ============================================================
 
 st.markdown(
-    """
-    <div style="
-        background: linear-gradient(90deg, rgba(80,80,80,0.10), rgba(80,80,80,0.03));
-        padding: 18px 22px;
-        border-radius: 14px;
-        border: 1px solid rgba(128,128,128,0.18);
-        margin-top: 28px;
-        margin-bottom: 14px;
-    ">
-        <div style="
-            display: flex;
-            align-items: center;
-            gap: 14px;
-        ">
-            <div style="
-                width: 42px;
-                height: 42px;
-                border-radius: 50%;
-                background: rgba(120,120,120,0.18);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 22px;
-                font-weight: 700;
-            ">
-                2
-            </div>
-
-            <div>
-                <div style="
-                    font-size: 23px;
-                    font-weight: 700;
-                    margin-bottom: 2px;
-                ">
-                    上傳 Mapping 資料
-                </div>
-
-                <div style="
-                    font-size: 14px;
-                    color: #888;
-                ">
-                    Upload customer and SKU mapping files
-                </div>
-            </div>
-        </div>
-    </div>
-    """,
+"""
+<div style="background: linear-gradient(90deg, rgba(80,80,80,0.10), rgba(80,80,80,0.03)); padding: 18px 22px; border-radius: 14px; border: 1px solid rgba(128,128,128,0.18); margin-top: 28px; margin-bottom: 14px;">
+<div style="display: flex; align-items: center; gap: 14px;">
+<div style="width: 42px; height: 42px; border-radius: 50%; background: rgba(120,120,120,0.18); display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700;">
+2
+</div>
+<div>
+<div style="font-size: 23px; font-weight: 700; margin-bottom: 2px;">
+上傳 Mapping 資料
+</div>
+<div style="font-size: 14px; color: #888;">
+Upload customer and SKU mapping files
+</div>
+</div>
+</div>
+</div>
+""",
     unsafe_allow_html=True,
 )
 
+
 map_col1, map_col2 = st.columns(2)
+
 
 with map_col1:
 
@@ -2684,6 +2633,7 @@ with map_col1:
         ],
         key="customer",
     )
+
 
 with map_col2:
 
