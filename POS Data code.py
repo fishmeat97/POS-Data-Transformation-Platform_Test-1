@@ -3104,32 +3104,135 @@ q3.metric(
 
 
 # ============================================================
-# 1. Detect Current Reporting Period
+# 1. NORMALIZE REPORTING PERIOD
 # ============================================================
 
-valid_periods = (
-    upload_log["年月"]
-    .astype(str)
-    .replace("", pd.NA)
-    .dropna()
-    .unique()
+def normalize_period_key(value):
+
+    text = norm_text(value)
+
+    digits = re.sub(
+        r"\D",
+        "",
+        text,
+    )
+
+    # YYYYMM
+    if len(digits) == 6:
+
+        year = int(
+            digits[:4]
+        )
+
+        month = int(
+            digits[4:]
+        )
+
+        if (
+            1900 <= year <= 2200
+            and
+            1 <= month <= 12
+        ):
+            return (
+                f"{year}"
+                f"{month:02d}"
+            )
+
+
+    # ROC YYYMM
+    # Example:
+    # 11509 -> 202609
+    if len(digits) == 5:
+
+        year = (
+            int(
+                digits[:3]
+            )
+            + 1911
+        )
+
+        month = int(
+            digits[3:]
+        )
+
+        if (
+            1 <= month <= 12
+        ):
+            return (
+                f"{year}"
+                f"{month:02d}"
+            )
+
+
+    return ""
+
+
+# ============================================================
+# 2. ACTUAL UPLOAD DATA
+# ============================================================
+
+actual_upload = (
+    upload_log
+    .copy()
 )
 
-if len(valid_periods) > 0:
 
-    reporting_period = sorted(
-        valid_periods
-    )[-1]
+actual_upload[
+    "PERIOD_KEY"
+] = (
+    actual_upload[
+        "年月"
+    ]
+    .map(
+        normalize_period_key
+    )
+)
+
+
+# ============================================================
+# 3. AVAILABLE MONTHS
+# ============================================================
+
+available_periods = sorted(
+    actual_upload[
+        "PERIOD_KEY"
+    ]
+    .replace(
+        "",
+        pd.NA,
+    )
+    .dropna()
+    .unique(),
+    reverse=True,
+)
+
+
+# ============================================================
+# 4. MONTH SELECTOR
+# ============================================================
+
+if available_periods:
+
+    selected_period = st.selectbox(
+        "📅 選擇繳交月份",
+        options=available_periods,
+        index=0,
+        format_func=lambda x:
+            f"{x[:4]} / {x[4:]}",
+    )
 
 else:
 
-    reporting_period = ""
+    selected_period = ""
+
+
+reporting_period = selected_period
 
 
 # ============================================================
-# 2. Build Expected Submission List
+# 5. EXPECTED SUBMISSION
 #
-# Customer Mapping = expected submission population
+# Customer Mapping = 每月應繳名單
 # ============================================================
 
 expected_submission = (
@@ -3148,9 +3251,29 @@ expected_submission = (
 )
 
 
-# ------------------------------------------------------------
-# Normalize Keys
-# ------------------------------------------------------------
+# ============================================================
+# 6. REMOVE INVALID OUTLET
+# ============================================================
+
+expected_submission = expected_submission[
+    expected_submission[
+        "Outlet No"
+    ]
+    .map(
+        norm_text
+    )
+    .ne("")
+].copy()
+
+
+# ============================================================
+# 7. EXPECTED KEYS
+# ============================================================
+
+expected_submission[
+    "PERIOD_KEY"
+] = selected_period
+
 
 expected_submission[
     "SALES_KEY"
@@ -3158,7 +3281,9 @@ expected_submission[
     expected_submission[
         "Sales ID"
     ]
-    .map(norm_key)
+    .map(
+        norm_key
+    )
 )
 
 
@@ -3168,52 +3293,56 @@ expected_submission[
     expected_submission[
         "Contract JDE"
     ]
-    .map(norm_key)
+    .map(
+        norm_key
+    )
 )
 
 
 expected_submission[
-    "OUTLET_KEY"
+    "OUTLET_TRACKING_KEY"
 ] = (
     expected_submission[
         "Outlet No"
     ]
-    .map(norm_key)
+    .map(
+        norm_key
+    )
 )
 
 
 expected_submission[
     "EXPECTED_KEY"
 ] = (
-
     expected_submission[
+        "PERIOD_KEY"
+    ]
+    + "|"
+    + expected_submission[
         "SALES_KEY"
     ]
-
     + "|"
-
     + expected_submission[
         "CONTRACT_KEY"
     ]
-
     + "|"
-
     + expected_submission[
-        "OUTLET_KEY"
+        "OUTLET_TRACKING_KEY"
     ]
 )
 
 
-# ------------------------------------------------------------
-# Remove duplicate expected submissions
-# ------------------------------------------------------------
+# ============================================================
+# 8. REMOVE EXPECTED DUPLICATES
+# ============================================================
 
 expected_submission = (
     expected_submission
     .drop_duplicates(
         subset=[
             "EXPECTED_KEY"
-        ]
+        ],
+        keep="first",
     )
     .reset_index(
         drop=True
@@ -3222,14 +3351,8 @@ expected_submission = (
 
 
 # ============================================================
-# 3. Build Actual Upload Key
+# 9. ACTUAL UPLOAD KEYS
 # ============================================================
-
-actual_upload = (
-    upload_log
-    .copy()
-)
-
 
 actual_upload[
     "SALES_KEY"
@@ -3237,7 +3360,9 @@ actual_upload[
     actual_upload[
         "業務代號"
     ]
-    .map(norm_key)
+    .map(
+        norm_key
+    )
 )
 
 
@@ -3247,51 +3372,116 @@ actual_upload[
     actual_upload[
         "合約編號"
     ]
-    .map(norm_key)
+    .map(
+        norm_key
+    )
 )
 
 
 actual_upload[
-    "OUTLET_KEY"
+    "OUTLET_TRACKING_KEY"
 ] = (
     actual_upload[
         "店家編號"
     ]
-    .map(norm_key)
+    .map(
+        norm_key
+    )
 )
 
 
 actual_upload[
     "UPLOAD_KEY"
 ] = (
-
     actual_upload[
+        "PERIOD_KEY"
+    ]
+    + "|"
+    + actual_upload[
         "SALES_KEY"
     ]
-
     + "|"
-
     + actual_upload[
         "CONTRACT_KEY"
     ]
-
     + "|"
-
     + actual_upload[
-        "OUTLET_KEY"
+        "OUTLET_TRACKING_KEY"
     ]
 )
 
 
 # ============================================================
-# 4. Merge Expected vs Actual
+# 10. FILTER SELECTED MONTH
+# ============================================================
+
+actual_upload_month = (
+    actual_upload[
+        actual_upload[
+            "PERIOD_KEY"
+        ]
+        == selected_period
+    ]
+    .copy()
+)
+
+
+# ============================================================
+# 11. HANDLE DUPLICATE UPLOAD
+#
+# Same Month + Sales + Contract + Outlet
+#
+# SUCCESS priority
+# ============================================================
+
+def choose_best_upload(group):
+
+    success_rows = group[
+        group[
+            "狀態"
+        ]
+        == "SUCCESS"
+    ]
+
+    if not success_rows.empty:
+
+        return success_rows.iloc[-1]
+
+    return group.iloc[-1]
+
+
+if not actual_upload_month.empty:
+
+    actual_upload_best = (
+        actual_upload_month
+        .groupby(
+            "UPLOAD_KEY",
+            group_keys=False,
+        )
+        .apply(
+            choose_best_upload,
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+else:
+
+    actual_upload_best = (
+        actual_upload_month
+        .copy()
+    )
+
+
+# ============================================================
+# 12. EXPECTED VS ACTUAL
 # ============================================================
 
 submission_detail = (
     expected_submission
     .merge(
-
-        actual_upload[
+        actual_upload_best[
             [
                 "UPLOAD_KEY",
                 "檔案",
@@ -3303,18 +3493,15 @@ submission_detail = (
                 "檔名格式",
             ]
         ],
-
         how="left",
-
         left_on="EXPECTED_KEY",
-
         right_on="UPLOAD_KEY",
     )
 )
 
 
 # ============================================================
-# 5. Submission Status
+# 13. SUBMISSION STATUS
 # ============================================================
 
 def get_submission_status(row):
@@ -3324,7 +3511,6 @@ def get_submission_status(row):
             "檔案"
         )
     ):
-
         return "MISSING"
 
     if (
@@ -3333,7 +3519,6 @@ def get_submission_status(row):
         )
         == "SUCCESS"
     ):
-
         return "SUCCESS"
 
     return "FAILED"
