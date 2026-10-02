@@ -3958,35 +3958,6 @@ st.dataframe(
 )
 
 
-# ============================================================
-# 27. STATUS DISTRIBUTION
-# ============================================================
-
-st.markdown(
-    "#### 📊 繳交狀況分布"
-)
-
-
-status_summary = (
-    submission_detail[
-        "SUBMISSION_STATUS"
-    ]
-    .value_counts()
-    .rename_axis(
-        "Status"
-    )
-    .reset_index(
-        name="Count"
-    )
-)
-
-
-st.bar_chart(
-    status_summary,
-    x="Status",
-    y="Count",
-)
-
 
 # ============================================================
 # 28. SHOP DETAIL
