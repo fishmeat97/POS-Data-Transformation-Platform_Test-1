@@ -4539,6 +4539,58 @@ with st.expander(
         hide_index=True,
         height=250,
     )
+
+
+
+# ============================================================
+# AUDIT COLUMNS
+#
+# 用於 Preview / Unmapped / Audit 顯示
+# ============================================================
+
+audit_columns = [
+    "SOURCE_FILE",
+    "SOURCE_ROW",
+    "TEMPLATE_TYPE",
+
+    "FILE_SALES_ID",
+    "FILE_CONTRACT_JDE",
+    "FILE_PERIOD",
+    "FILE_OUTLET_NO",
+    "FILE_RAWDATA_NAME",
+
+    "RAW_CUSTOMER",
+    "RAW_ROW_CUSTOMER",
+
+    "RAW_SKU",
+    "RAW_PRODUCT_CODE",
+
+    "QTY",
+
+    "CUSTOMER_MAPPING_STATUS",
+    "SKU_MAPPING_STATUS",
+
+    "SALES_ID_CHECK",
+    "CONTRACT_CHECK",
+    "OUTLET_CHECK",
+    "RAWDATA_NAME_CHECK",
+]
+
+
+# ============================================================
+# 只保留 detail 裡實際存在的欄位
+#
+# 避免某些 Template 沒有特定欄位時出現 KeyError
+# ============================================================
+
+audit_columns = [
+    column
+    for column
+    in audit_columns
+    if column in detail.columns
+]
+
+
 # ============================================================
 # STEP 4 - DATA PREVIEW
 # ============================================================
