@@ -391,10 +391,10 @@ def transform_template_1(uploaded_file):
     )
 
     output["UNIT_PRICE"] = pd.NA
-    )
+    
 
     output["TOTAL_PRICE"] = pd.NA
-    )
+    
 
     brand_col = first_matching_column(
         df,
