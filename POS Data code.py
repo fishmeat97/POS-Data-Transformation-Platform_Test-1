@@ -3230,64 +3230,46 @@ reporting_period = selected_period
 
 
 # ============================================================
-# 5. EXPECTED SUBMISSION
+# ============================================================
+# EXPECTED SUBMISSION
 #
 # Customer Mapping = 每月應繳名單
 # ============================================================
 
-expected_submission[
-    "SALES_KEY"
-] = (
-    expected_submission[
-        "Sales ID"
+expected_submission = (
+    customer_map[
+        [
+            "Sales ID",
+            "Sales",
+            "Contract JDE",
+            "Contract NAME",
+            "Outlet No",
+            "Outlet NAME",
+            "Rawdata Name",
+        ]
     ]
-    .map(
-        norm_id_key
-    )
-)
-
-
-expected_submission[
-    "CONTRACT_KEY"
-] = (
-    expected_submission[
-        "Contract JDE"
-    ]
-    .map(
-        norm_id_key
-    )
-)
-
-
-expected_submission[
-    "OUTLET_TRACKING_KEY"
-] = (
-    expected_submission[
-        "Outlet No"
-    ]
-    .map(
-        norm_id_key
-    )
+    .copy()
 )
 
 
 # ============================================================
-# 6. REMOVE INVALID OUTLET
+# REMOVE INVALID OUTLET
 # ============================================================
 
-expected_submission = expected_submission[
+expected_submission = (
     expected_submission[
-        "Outlet No"
+        expected_submission[
+            "Outlet No"
+        ]
+        .map(norm_text)
+        .ne("")
     ]
-    .map(
-        norm_text
-    )
-    .ne("")
-].copy()
+    .copy()
+)
 
 
 # ============================================================
-# 7. EXPECTED KEYS
+# PERIOD KEY
 # ============================================================
 
 expected_submission[
@@ -3295,6 +3277,10 @@ expected_submission[
 ] = selected_period
 
 
+# ============================================================
+# SALES KEY
+# ============================================================
+
 expected_submission[
     "SALES_KEY"
 ] = (
@@ -3302,10 +3288,14 @@ expected_submission[
         "Sales ID"
     ]
     .map(
-        norm_key
+        norm_id_key
     )
 )
 
+
+# ============================================================
+# CONTRACT KEY
+# ============================================================
 
 expected_submission[
     "CONTRACT_KEY"
@@ -3314,10 +3304,14 @@ expected_submission[
         "Contract JDE"
     ]
     .map(
-        norm_key
+        norm_id_key
     )
 )
 
+
+# ============================================================
+# OUTLET KEY
+# ============================================================
 
 expected_submission[
     "OUTLET_TRACKING_KEY"
@@ -3326,10 +3320,16 @@ expected_submission[
         "Outlet No"
     ]
     .map(
-        norm_key
+        norm_id_key
     )
 )
 
+
+# ============================================================
+# EXPECTED SUBMISSION KEY
+#
+# YYYYMM | Sales | Contract | Outlet
+# ============================================================
 
 expected_submission[
     "EXPECTED_KEY"
@@ -3349,6 +3349,24 @@ expected_submission[
     + expected_submission[
         "OUTLET_TRACKING_KEY"
     ]
+)
+
+
+# ============================================================
+# REMOVE DUPLICATES
+# ============================================================
+
+expected_submission = (
+    expected_submission
+    .drop_duplicates(
+        subset=[
+            "EXPECTED_KEY"
+        ],
+        keep="first",
+    )
+    .reset_index(
+        drop=True
+    )
 )
 
 
