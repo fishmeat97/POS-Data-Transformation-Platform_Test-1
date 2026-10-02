@@ -67,11 +67,11 @@ CUSTOMER_REQUIRED = [
 
 SKU_REQUIRED = [
     "Mapping Name",
-    "SKU NAME",
-    "Manufacture",
-    "Brand",
     "RSP",
     "Price Band",
+    "Manufacture",
+    "Brand",
+    "SKU Name",
     "SIZE",
     "CATEGORY",
 ]
@@ -1380,44 +1380,191 @@ def prepare_customer_mapping(df):
 # ============================================================
 # SKU Mapping
 # ============================================================
+# ============================================================
+# SKU MAPPING
+#
+# JOIN KEY:
+# Template RAW_SKU
+#      ↓
+# SKU Mapping["SKU Name"]
+#
+# RETURN:
+# Mapping Name
+# RSP
+# Price Band
+# Manufacture
+# Brand
+# SIZE
+# CATEGORY
+# ============================================================
 def prepare_sku_mapping(df):
-    resolved, missing = resolve_required(
-        df,
-        SKU_REQUIRED,
+
+    df = df.copy()
+
+    # --------------------------------------------------------
+    # Clean column names
+    # --------------------------------------------------------
+
+    df.columns = [
+        norm_text(col)
+        for col in df.columns
+    ]
+
+
+    # --------------------------------------------------------
+    # Find required columns
+    # --------------------------------------------------------
+
+    resolved, missing = (
+        resolve_required(
+            df,
+            SKU_REQUIRED,
+        )
     )
+
 
     if missing:
+
         raise ValueError(
-            "SKU Mapping 缺少："
+            "SKU Mapping 缺少欄位："
             + ", ".join(missing)
+            + f"\n目前欄位：{list(df.columns)}"
         )
 
+
+    # --------------------------------------------------------
+    # Standardise Mapping DataFrame
+    # --------------------------------------------------------
+
     mapping = pd.DataFrame({
-        column: df[source]
-        for column, source in resolved.items()
+
+        "Mapping Name":
+            df[
+                resolved[
+                    "Mapping Name"
+                ]
+            ],
+
+        "RSP":
+            df[
+                resolved[
+                    "RSP"
+                ]
+            ],
+
+        "Price Band":
+            df[
+                resolved[
+                    "Price Band"
+                ]
+            ],
+
+        "Manufacture":
+            df[
+                resolved[
+                    "Manufacture"
+                ]
+            ],
+
+        "Brand":
+            df[
+                resolved[
+                    "Brand"
+                ]
+            ],
+
+        "SKU Name":
+            df[
+                resolved[
+                    "SKU Name"
+                ]
+            ],
+
+        "SIZE":
+            df[
+                resolved[
+                    "SIZE"
+                ]
+            ],
+
+        "CATEGORY":
+            df[
+                resolved[
+                    "CATEGORY"
+                ]
+            ],
     })
 
-    mapping["SKU_KEY"] = (
-        mapping["SKU Name"]
-        .map(norm_key)
+
+    # --------------------------------------------------------
+    # IMPORTANT
+    #
+    # SKU Name is JOIN KEY
+    # NOT Mapping Name
+    # --------------------------------------------------------
+
+    mapping[
+        "SKU_KEY"
+    ] = (
+
+        mapping[
+            "SKU Name"
+        ]
+
+        .map(
+            norm_key
+        )
     )
 
+
+    # --------------------------------------------------------
+    # Remove blank SKU keys
+    # --------------------------------------------------------
+
+    mapping = mapping[
+        mapping[
+            "SKU_KEY"
+        ].ne("")
+    ].copy()
+
+
+    # --------------------------------------------------------
+    # Duplicate SKU Name check
+    # --------------------------------------------------------
+
     duplicate_mapping = mapping[
-        mapping["SKU_KEY"].ne("")
-        &
         mapping.duplicated(
-            "SKU_KEY",
+            subset=[
+                "SKU_KEY"
+            ],
             keep=False,
         )
     ].copy()
 
+
+    # --------------------------------------------------------
+    # Mapping table used for join
+    #
+    # Keep first only prevents duplicate join expansion.
+    # Duplicate records remain visible in duplicate report.
+    # --------------------------------------------------------
+
     mapping_for_join = (
+
         mapping
+
         .drop_duplicates(
-            "SKU_KEY",
+            subset=[
+                "SKU_KEY"
+            ],
             keep="first",
         )
+
+        .reset_index(
+            drop=True
+        )
     )
+
 
     return (
         mapping_for_join,
@@ -1600,75 +1747,100 @@ def attach_customer_mapping(
                 ==
                 norm_key(
                     row["Sales ID"]
-                )
-                else "MISMATCH"
-            )
-        ),
-        axis=1,
-    )
-
-    # Contract Check
-    merged[
-        "CONTRACT_CHECK"
-    ] = merged.apply(
-        lambda row:
-        (
-            "UNMAPPED"
-            if row[
-                "CUSTOMER_MAPPING_STATUS"
-            ] == "UNMAPPED"
-            else (
-                "MATCH"
-                if norm_key(
-                    row["FILE_CONTRACT_JDE"]
-                )
-                ==
-                norm_key(
-                    row["Contract JDE"]
-                )
-                else "MISMATCH"
-            )
-        ),
-        axis=1,
-    )
-
-    return merged
-
+            # ============================================================
 
 # ============================================================
 # SKU Mapping Join
 # ============================================================
+# ============================================================
+# SKU MAPPING JOIN
+# ============================================================
+
 def attach_sku_mapping(
     df,
     sku_map,
 ):
+
     output = df.copy()
 
-    output["SKU_KEY"] = (
-        output["RAW_SKU"]
-        .map(norm_key)
+
+    # --------------------------------------------------------
+    # Template 商品名稱
+    # RAW_SKU -> normalized SKU_KEY
+    # --------------------------------------------------------
+
+    output[
+        "SKU_KEY"
+    ] = (
+
+        output[
+            "RAW_SKU"
+        ]
+
+        .map(
+            norm_key
+        )
     )
 
+
+    # --------------------------------------------------------
+    # LEFT JOIN
+    #
+    # Template RAW_SKU
+    #          ↓
+    # SKU_KEY
+    #          =
+    # Mapping SKU Name
+    #
+    # LEFT JOIN = unmapped source rows remain
+    # --------------------------------------------------------
+
     output = output.merge(
-        sku_map,
+
+        sku_map[
+            [
+                "SKU_KEY",
+                "SKU Name",
+                "Mapping Name",
+                "RSP",
+                "Price Band",
+                "Manufacture",
+                "Brand",
+                "SIZE",
+                "CATEGORY",
+            ]
+        ],
+
         how="left",
+
         on="SKU_KEY",
-        suffixes=(
-            "",
-            "_SKU",
-        ),
     )
+
+
+    # --------------------------------------------------------
+    # Mapping Status
+    # --------------------------------------------------------
 
     output[
         "SKU_MAPPING_STATUS"
-    ] = output[
-        "Mapping Name"
-    ].apply(
-        lambda x:
-        "MAPPED"
-        if norm_text(x)
-        else "UNMAPPED"
+    ] = (
+
+        output[
+            "Mapping Name"
+        ]
+
+        .apply(
+
+            lambda value:
+
+            "MAPPED"
+
+            if norm_text(value)
+
+            else "UNMAPPED"
+        )
     )
+
 
     return output
 
