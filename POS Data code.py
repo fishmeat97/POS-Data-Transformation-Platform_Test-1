@@ -586,19 +586,30 @@ def transform_template_1(uploaded_file):
 # ============================================================
 # ============================================================
 # ============================================================
+# ============================================================
 # TEMPLATE 2
 # Horizontal Monthly Actual Sales
 #
-# 商品名稱   -> RAW_SKU
-# 商品代號   -> RAW_PRODUCT_CODE
-# 實銷       -> QTY
+# Example:
+# 洋酒城系列
 #
-# PRICE LOGIC:
-# 不使用 Template 內任何價格
-# 單價 / 總價後續統一使用 SKU Mapping 的 RSP 計算
+# 商品名稱 -> RAW_SKU
+# 商品代號 -> RAW_PRODUCT_CODE
+# 實銷     -> QTY
+#
+# Customer:
+# 由檔名取得
+#
+# Price:
+# 不使用 Template 價格
+# Report 統一使用 SKU Mapping RSP
 # ============================================================
 
 def transform_template_2(uploaded_file):
+
+    # ========================================================
+    # 1. Parse Filename
+    # ========================================================
 
     meta = parse_filename(
         uploaded_file.name
@@ -606,7 +617,7 @@ def transform_template_2(uploaded_file):
 
 
     # ========================================================
-    # 1. Read Excel
+    # 2. Read Excel
     # ========================================================
 
     raw = read_excel_bytes(
@@ -617,17 +628,14 @@ def transform_template_2(uploaded_file):
 
 
     if len(raw) < 4:
+
         raise ValueError(
             "Template 2 資料列不足。"
         )
 
 
     # ========================================================
-    # 2. Find Header Row
-    #
-    # 必須同時找到：
-    # 商品代號
-    # 商品名稱
+    # 3. Find Header Row
     # ========================================================
 
     header_row = None
@@ -641,8 +649,9 @@ def transform_template_2(uploaded_file):
     ):
 
         values = [
-            norm_text(x)
-            for x in raw.iloc[i].tolist()
+            norm_text(value)
+            for value
+            in raw.iloc[i].tolist()
         ]
 
 
@@ -653,6 +662,7 @@ def transform_template_2(uploaded_file):
         ):
 
             header_row = i
+
             break
 
 
@@ -664,9 +674,7 @@ def transform_template_2(uploaded_file):
 
 
     # ========================================================
-    # 3. Date Row
-    #
-    # 月份通常位於 Header 上一列
+    # 4. Header + Date Row
     # ========================================================
 
     date_row = max(
@@ -676,8 +684,9 @@ def transform_template_2(uploaded_file):
 
 
     headers = [
-        norm_text(x)
-        for x in raw.iloc[
+        norm_text(value)
+        for value
+        in raw.iloc[
             header_row
         ].tolist()
     ]
@@ -691,10 +700,7 @@ def transform_template_2(uploaded_file):
 
 
     # ========================================================
-    # 4. Forward Fill Date Headers
-    #
-    # Excel 常使用 Merge Cell
-    # 因此日期只會出現在區塊第一欄
+    # 5. Forward Fill Date
     # ========================================================
 
     ff_dates = []
@@ -719,7 +725,7 @@ def transform_template_2(uploaded_file):
 
 
     # ========================================================
-    # 5. Find Product Code Column
+    # 6. Find Product Columns
     # ========================================================
 
     product_code_idx = next(
@@ -732,10 +738,6 @@ def transform_template_2(uploaded_file):
         None,
     )
 
-
-    # ========================================================
-    # 6. Find Product Name Column
-    # ========================================================
 
     product_name_idx = next(
         (
@@ -756,7 +758,7 @@ def transform_template_2(uploaded_file):
 
 
     # ========================================================
-    # 7. Reporting Period from Filename
+    # 7. Target Reporting Period
     # ========================================================
 
     target_year = meta[
@@ -770,11 +772,6 @@ def transform_template_2(uploaded_file):
 
     # ========================================================
     # 8. Find Correct Actual Sales Column
-    #
-    # 實銷 = QTY
-    #
-    # 優先：
-    # 找檔名年月相同的「實銷」
     # ========================================================
 
     actual_sales_idx = None
@@ -807,14 +804,12 @@ def transform_template_2(uploaded_file):
         ):
 
             actual_sales_idx = i
+
             break
 
 
     # ========================================================
     # 9. Fallback
-    #
-    # 如果無法由日期精準判斷
-    # 使用第一個「實銷」欄位
     # ========================================================
 
     if actual_sales_idx is None:
@@ -838,7 +833,7 @@ def transform_template_2(uploaded_file):
 
 
     # ========================================================
-    # 10. Extract Data Area
+    # 10. Extract Data
     # ========================================================
 
     data = (
@@ -847,14 +842,6 @@ def transform_template_2(uploaded_file):
             header_row + 1:
         ]
         .copy()
-        .reset_index(
-            drop=True
-        )
-    )
-
-
-    data = (
-        data
         .dropna(
             how="all"
         )
@@ -865,19 +852,22 @@ def transform_template_2(uploaded_file):
 
 
     # ========================================================
-    # 11. Extract Raw SKU
+    # 11. Raw SKU
     # ========================================================
 
-    raw_sku = data.iloc[
-        :,
-        product_name_idx
-    ]
+    raw_sku = (
+        data.iloc[
+            :,
+            product_name_idx
+        ]
+        .map(
+            norm_text
+        )
+    )
 
 
     # ========================================================
-    # 12. Extract Quantity
-    #
-    # 實銷 -> QTY
+    # 12. Quantity
     # ========================================================
 
     qty = numeric(
@@ -889,23 +879,17 @@ def transform_template_2(uploaded_file):
 
 
     # ========================================================
-    # 13. Valid Product Rows
-    #
-    # 只保留有商品名稱的資料
+    # 13. Keep Valid Product Rows
     # ========================================================
 
     valid = (
         raw_sku
-        .map(
-            norm_text
-        )
         .ne("")
     )
 
 
     data = (
-        data
-        .loc[
+        data.loc[
             valid
         ]
         .reset_index(
@@ -915,8 +899,7 @@ def transform_template_2(uploaded_file):
 
 
     raw_sku = (
-        raw_sku
-        .loc[
+        raw_sku.loc[
             valid
         ]
         .reset_index(
@@ -926,8 +909,7 @@ def transform_template_2(uploaded_file):
 
 
     qty = (
-        qty
-        .loc[
+        qty.loc[
             valid
         ]
         .reset_index(
@@ -949,7 +931,14 @@ def transform_template_2(uploaded_file):
 
 
     # ========================================================
-    # Customer
+    # 15. Customer Metadata
+    #
+    # Customer Mapping 之後會使用：
+    #
+    # FILE_OUTLET_NO
+    # FILE_RAWDATA_NAME
+    #
+    # 兩者都已經由 base_records(meta) 保留
     # ========================================================
 
     output[
@@ -965,21 +954,16 @@ def transform_template_2(uploaded_file):
 
 
     # ========================================================
-    # SKU
+    # 16. SKU
     # ========================================================
 
     output[
         "RAW_SKU"
-    ] = (
-        raw_sku
-        .map(
-            norm_text
-        )
-    )
+    ] = raw_sku
 
 
     # ========================================================
-    # Quantity
+    # 17. Quantity
     # ========================================================
 
     output[
@@ -988,15 +972,9 @@ def transform_template_2(uploaded_file):
 
 
     # ========================================================
-    # Price
+    # 18. Price
     #
-    # IMPORTANT:
-    # Template 2 不使用原始價格
-    #
-    # Report 階段：
-    #
-    # 單價 = RSP
-    # 總價 = QTY × RSP
+    # 不使用 Template Price
     # ========================================================
 
     output[
@@ -1010,7 +988,7 @@ def transform_template_2(uploaded_file):
 
 
     # ========================================================
-    # Product Code
+    # 19. Product Code
     # ========================================================
 
     if product_code_idx is not None:
@@ -1018,7 +996,6 @@ def transform_template_2(uploaded_file):
         output[
             "RAW_PRODUCT_CODE"
         ] = (
-
             data.iloc[
                 :,
                 product_code_idx
@@ -1037,7 +1014,7 @@ def transform_template_2(uploaded_file):
 
 
     # ========================================================
-    # Audit Information
+    # 20. Audit
     # ========================================================
 
     output[
@@ -1700,57 +1677,98 @@ def resolve_required(
 # ============================================================
 # Customer Mapping
 # ============================================================
+# ============================================================
+# CUSTOMER MAPPING PREPARATION
+# ============================================================
+
 def prepare_customer_mapping(df):
+
     resolved, missing = resolve_required(
         df,
         CUSTOMER_REQUIRED,
     )
 
     if missing:
+
         raise ValueError(
-            "Customer Mapping 缺少："
+            "Customer Mapping 缺少欄位："
             + ", ".join(missing)
         )
 
+
     mapping = pd.DataFrame({
-        column: df[source]
-        for column, source in resolved.items()
+
+        column:
+            df[source]
+
+        for column, source
+        in resolved.items()
     })
+
+
+    # ========================================================
+    # IMPORTANT
+    #
+    # ID 欄位一定使用 norm_id_key
+    # 不要使用 norm_key
+    # ========================================================
 
     mapping["OUTLET_KEY"] = (
         mapping["Outlet No"]
-        .map(norm_key)
+        .map(
+            norm_id_key
+        )
     )
 
-    mapping["RAWDATA_KEY"] = (
-        mapping["Rawdata Name"]
-        .map(norm_key)
-    )
 
     mapping["SALES_KEY"] = (
         mapping["Sales ID"]
-        .map(norm_key)
+        .map(
+            norm_id_key
+        )
     )
+
 
     mapping["CONTRACT_KEY"] = (
         mapping["Contract JDE"]
-        .map(norm_key)
+        .map(
+            norm_id_key
+        )
     )
+
+
+    # ========================================================
+    # Name 欄位才使用 norm_key
+    # ========================================================
+
+    mapping["RAWDATA_KEY"] = (
+        mapping["Rawdata Name"]
+        .map(
+            norm_key
+        )
+    )
+
+
+    # ========================================================
+    # Duplicate Outlet Check
+    # ========================================================
 
     duplicate_outlet = mapping[
         mapping["OUTLET_KEY"].ne("")
         &
         mapping.duplicated(
-            "OUTLET_KEY",
+            subset=[
+                "OUTLET_KEY"
+            ],
             keep=False,
         )
     ].copy()
+
 
     return (
         mapping,
         duplicate_outlet,
     )
-
 
 # ============================================================
 # SKU Mapping
@@ -2006,6 +2024,18 @@ def read_mapping_file(
 # LEFT JOIN only
 # ============================================================
 
+# ============================================================
+# CUSTOMER MAPPING JOIN
+#
+# Priority:
+# 1. Outlet No
+# 2. Rawdata Name
+#
+# IMPORTANT:
+# ID -> norm_id_key
+# Name -> norm_key
+# ============================================================
+
 def attach_customer_mapping(
     raw,
     customer_map,
@@ -2015,28 +2045,39 @@ def attach_customer_mapping(
 
 
     # ========================================================
-    # Build source-side keys
+    # 1. SOURCE KEYS
     # ========================================================
 
     source["FILE_OUTLET_KEY"] = (
         source["FILE_OUTLET_NO"]
-        .map(norm_key)
+        .map(
+            norm_id_key
+        )
     )
+
 
     source["FILE_RAWDATA_KEY"] = (
         source["FILE_RAWDATA_NAME"]
-        .map(norm_key)
+        .map(
+            norm_key
+        )
     )
 
 
     # ========================================================
-    # 1. First match by Outlet No
+    # 2. FIRST MATCH BY OUTLET NO
     # ========================================================
 
     by_outlet = (
-        customer_map
+        customer_map[
+            customer_map[
+                "OUTLET_KEY"
+            ].ne("")
+        ]
         .drop_duplicates(
-            "OUTLET_KEY",
+            subset=[
+                "OUTLET_KEY"
+            ],
             keep="first",
         )
         .copy()
@@ -2056,32 +2097,43 @@ def attach_customer_mapping(
 
 
     # ========================================================
-    # Find unmatched rows
+    # 3. FIND UNMATCHED
     # ========================================================
 
     unmatched = (
-        merged["Outlet No"].isna()
+        merged[
+            "Outlet No"
+        ].isna()
         |
-        merged["Outlet No"]
-        .map(norm_text)
+        merged[
+            "Outlet No"
+        ]
+        .map(
+            norm_text
+        )
         .eq("")
     )
 
 
     # ========================================================
-    # 2. Fallback match by Rawdata Name
+    # 4. FALLBACK BY RAWDATA NAME
     # ========================================================
 
     if unmatched.any():
 
         by_raw = (
             customer_map[
-                customer_map["RAWDATA_KEY"].ne("")
+                customer_map[
+                    "RAWDATA_KEY"
+                ].ne("")
             ]
             .drop_duplicates(
-                "RAWDATA_KEY",
+                subset=[
+                    "RAWDATA_KEY"
+                ],
                 keep="first",
             )
+            .copy()
         )
 
 
@@ -2089,6 +2141,7 @@ def attach_customer_mapping(
             source.loc[
                 unmatched.values
             ]
+            .copy()
         )
 
 
@@ -2130,6 +2183,179 @@ def attach_customer_mapping(
                     column
                 ].values
 
+
+    # ========================================================
+    # 5. MAPPING STATUS
+    # ========================================================
+
+    merged[
+        "CUSTOMER_MAPPING_STATUS"
+    ] = (
+        merged[
+            "Outlet No"
+        ]
+        .apply(
+            lambda value:
+                "MAPPED"
+                if norm_text(value)
+                else "UNMAPPED"
+        )
+    )
+
+
+    # ========================================================
+    # 6. SALES ID CHECK
+    # ========================================================
+
+    merged[
+        "SALES_ID_CHECK"
+    ] = merged.apply(
+        lambda row:
+        (
+            "UNMAPPED"
+            if (
+                row[
+                    "CUSTOMER_MAPPING_STATUS"
+                ]
+                == "UNMAPPED"
+            )
+            else (
+                "MATCH"
+                if (
+                    norm_id_key(
+                        row[
+                            "FILE_SALES_ID"
+                        ]
+                    )
+                    ==
+                    norm_id_key(
+                        row[
+                            "Sales ID"
+                        ]
+                    )
+                )
+                else "MISMATCH"
+            )
+        ),
+        axis=1,
+    )
+
+
+    # ========================================================
+    # 7. CONTRACT CHECK
+    # ========================================================
+
+    merged[
+        "CONTRACT_CHECK"
+    ] = merged.apply(
+        lambda row:
+        (
+            "UNMAPPED"
+            if (
+                row[
+                    "CUSTOMER_MAPPING_STATUS"
+                ]
+                == "UNMAPPED"
+            )
+            else (
+                "MATCH"
+                if (
+                    norm_id_key(
+                        row[
+                            "FILE_CONTRACT_JDE"
+                        ]
+                    )
+                    ==
+                    norm_id_key(
+                        row[
+                            "Contract JDE"
+                        ]
+                    )
+                )
+                else "MISMATCH"
+            )
+        ),
+        axis=1,
+    )
+
+
+    # ========================================================
+    # 8. OUTLET CHECK
+    # ========================================================
+
+    merged[
+        "OUTLET_CHECK"
+    ] = merged.apply(
+        lambda row:
+        (
+            "UNMAPPED"
+            if (
+                row[
+                    "CUSTOMER_MAPPING_STATUS"
+                ]
+                == "UNMAPPED"
+            )
+            else (
+                "MATCH"
+                if (
+                    norm_id_key(
+                        row[
+                            "FILE_OUTLET_NO"
+                        ]
+                    )
+                    ==
+                    norm_id_key(
+                        row[
+                            "Outlet No"
+                        ]
+                    )
+                )
+                else "MISMATCH"
+            )
+        ),
+        axis=1,
+    )
+
+
+    # ========================================================
+    # 9. RAWDATA NAME CHECK
+    # ========================================================
+
+    merged[
+        "RAWDATA_NAME_CHECK"
+    ] = merged.apply(
+        lambda row:
+        (
+            "UNMAPPED"
+            if (
+                row[
+                    "CUSTOMER_MAPPING_STATUS"
+                ]
+                == "UNMAPPED"
+            )
+            else (
+                "MATCH"
+                if (
+                    norm_key(
+                        row[
+                            "FILE_RAWDATA_NAME"
+                        ]
+                    )
+                    ==
+                    norm_key(
+                        row[
+                            "Rawdata Name"
+                        ]
+                    )
+                )
+                else "MISMATCH"
+            )
+        ),
+        axis=1,
+    )
+
+
+    return merged
 
     # ========================================================
     # Customer Mapping Status
