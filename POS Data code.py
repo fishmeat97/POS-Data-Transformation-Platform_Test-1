@@ -456,7 +456,18 @@ def transform_template_1(uploaded_file):
 # Horizontal Monthly Actual Sales
 # Example: 洋酒城系列
 # ============================================================
+# ============================================================
+# TEMPLATE 2
+# Horizontal Monthly Actual Sales
+#
+# 商品名稱   -> RAW_SKU
+# 實銷       -> QTY
+# 菸專牌價   -> UNIT_PRICE
+# QTY * UNIT_PRICE -> TOTAL_PRICE
+# ============================================================
+
 def transform_template_2(uploaded_file):
+
     meta = parse_filename(
         uploaded_file.name
     )
@@ -472,6 +483,11 @@ def transform_template_2(uploaded_file):
             "Template 2 資料列不足。"
         )
 
+
+    # ========================================================
+    # 1. 找 Header Row
+    # ========================================================
+
     header_row = None
 
     for i in range(
@@ -480,6 +496,7 @@ def transform_template_2(uploaded_file):
             len(raw),
         )
     ):
+
         values = [
             norm_text(x)
             for x in raw.iloc[i].tolist()
@@ -487,20 +504,29 @@ def transform_template_2(uploaded_file):
 
         if (
             "商品代號" in values
-            and "商品名稱" in values
+            and
+            "商品名稱" in values
         ):
             header_row = i
             break
+
 
     if header_row is None:
         raise ValueError(
             "Template 2 找不到「商品代號 / 商品名稱」表頭。"
         )
 
+
+    # ========================================================
+    # 2. 日期列
+    # 通常在 Header 上一列
+    # ========================================================
+
     date_row = max(
         0,
         header_row - 1,
     )
+
 
     headers = [
         norm_text(x)
@@ -509,24 +535,38 @@ def transform_template_2(uploaded_file):
         ].tolist()
     ]
 
+
     dates = list(
         raw.iloc[
             date_row
         ].tolist()
     )
 
-    # forward fill date headers
+
+    # ========================================================
+    # 3. Forward Fill 日期
+    # ========================================================
+
     ff_dates = []
+
     current = None
 
     for x in dates:
+
         if (
             pd.notna(x)
             and norm_text(x)
         ):
             current = x
 
-        ff_dates.append(current)
+        ff_dates.append(
+            current
+        )
+
+
+    # ========================================================
+    # 4. 商品代號
+    # ========================================================
 
     product_code_idx = next(
         (
@@ -537,6 +577,11 @@ def transform_template_2(uploaded_file):
         None,
     )
 
+
+    # ========================================================
+    # 5. 商品名稱
+    # ========================================================
+
     product_name_idx = next(
         (
             i
@@ -546,24 +591,59 @@ def transform_template_2(uploaded_file):
         None,
     )
 
+
     if product_name_idx is None:
         raise ValueError(
             "Template 2 找不到商品名稱。"
         )
 
+
+    # ========================================================
+    # 6. 找「菸專牌價」
+    # ========================================================
+
+    unit_price_idx = next(
+        (
+            i
+            for i, h in enumerate(headers)
+            if "菸專牌價" in h
+        ),
+        None,
+    )
+
+
+    if unit_price_idx is None:
+        raise ValueError(
+            "Template 2 找不到「菸專牌價」欄位。"
+        )
+
+
+    # ========================================================
+    # 7. 目標年月
+    # ========================================================
+
     target_year = meta["YEAR"]
     target_month = meta["MONTH"]
 
+
+    # ========================================================
+    # 8. 找對應月份的「實銷」
+    # ========================================================
+
     actual_sales_idx = None
 
+
     for i, header in enumerate(headers):
+
         if "實銷" not in header:
             continue
+
 
         date_value = pd.to_datetime(
             ff_dates[i],
             errors="coerce",
         )
+
 
         if (
             pd.notna(date_value)
@@ -572,11 +652,19 @@ def transform_template_2(uploaded_file):
             and date_value.year == target_year
             and date_value.month == target_month
         ):
+
             actual_sales_idx = i
             break
 
-    # fallback to first actual-sales column
+
+    # ========================================================
+    # 9. Fallback
+    #
+    # 找不到指定月份時，使用第一個實銷欄位
+    # ========================================================
+
     if actual_sales_idx is None:
+
         actual_sales_idx = next(
             (
                 i
@@ -586,10 +674,16 @@ def transform_template_2(uploaded_file):
             None,
         )
 
+
     if actual_sales_idx is None:
         raise ValueError(
             "Template 2 找不到「實銷」欄位。"
         )
+
+
+    # ========================================================
+    # 10. Data Area
+    # ========================================================
 
     data = (
         raw
@@ -600,16 +694,27 @@ def transform_template_2(uploaded_file):
         .reset_index(drop=True)
     )
 
+
     data = (
         data
         .dropna(how="all")
         .reset_index(drop=True)
     )
 
+
+    # ========================================================
+    # 11. Raw SKU
+    # ========================================================
+
     raw_sku = data.iloc[
         :,
         product_name_idx
     ]
+
+
+    # ========================================================
+    # 12. Quantity = 實銷
+    # ========================================================
 
     qty = numeric(
         data.iloc[
@@ -618,11 +723,30 @@ def transform_template_2(uploaded_file):
         ]
     )
 
+
+    # ========================================================
+    # 13. Unit Price = 菸專牌價
+    # ========================================================
+
+    unit_price = numeric(
+        data.iloc[
+            :,
+            unit_price_idx
+        ]
+    )
+
+
+    # ========================================================
+    # 14. Valid Rows
+    # 只保留有商品名稱的資料
+    # ========================================================
+
     valid = (
         raw_sku
         .map(norm_text)
         .ne("")
     )
+
 
     data = (
         data
@@ -630,17 +754,44 @@ def transform_template_2(uploaded_file):
         .reset_index(drop=True)
     )
 
+
     raw_sku = (
         raw_sku
         .loc[valid]
         .reset_index(drop=True)
     )
 
+
     qty = (
         qty
         .loc[valid]
         .reset_index(drop=True)
     )
+
+
+    unit_price = (
+        unit_price
+        .loc[valid]
+        .reset_index(drop=True)
+    )
+
+
+    # ========================================================
+    # 15. Total Price
+    #
+    # 實銷 × 菸專牌價
+    # ========================================================
+
+    total_price = (
+        qty
+        *
+        unit_price
+    )
+
+
+    # ========================================================
+    # 16. Build Output
+    # ========================================================
 
     output = base_records(
         data,
@@ -649,30 +800,71 @@ def transform_template_2(uploaded_file):
         uploaded_file.name,
     )
 
+
+    # ========================================================
+    # Customer
+    # ========================================================
+
     output["RAW_CUSTOMER"] = meta[
         "FILE_RAWDATA_NAME"
     ]
 
+
     output["RAW_ROW_CUSTOMER"] = ""
+
+
+    # ========================================================
+    # SKU
+    # ========================================================
 
     output["RAW_SKU"] = (
         raw_sku
         .map(norm_text)
     )
 
+
+    # ========================================================
+    # Quantity / Price
+    # ========================================================
+
     output["QTY"] = qty
-    output["UNIT_PRICE"] = pd.NA
-    output["TOTAL_PRICE"] = pd.NA
+
+    output["UNIT_PRICE"] = unit_price
+
+    output["TOTAL_PRICE"] = total_price
+
+
+    # ========================================================
+    # Product Code
+    # ========================================================
 
     if product_code_idx is not None:
+
         output["RAW_PRODUCT_CODE"] = (
             data.iloc[
                 :,
                 product_code_idx
             ].values
         )
+
     else:
+
         output["RAW_PRODUCT_CODE"] = ""
+
+
+    # ========================================================
+    # Debug / Audit
+    # ========================================================
+
+    output[
+        "SOURCE_QTY_COLUMN"
+    ] = "實銷"
+
+
+    output[
+        "SOURCE_PRICE_COLUMN"
+    ] = "菸專牌價"
+
 
     return output
 
