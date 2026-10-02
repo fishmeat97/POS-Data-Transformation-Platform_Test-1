@@ -1621,11 +1621,27 @@ def read_mapping_file(
 #
 # LEFT JOIN only
 # ============================================================
+# ============================================================
+# CUSTOMER MAPPING JOIN
+#
+# Priority:
+# 1. Outlet No
+# 2. Rawdata Name fallback
+#
+# LEFT JOIN only
+# ============================================================
+
 def attach_customer_mapping(
     raw,
     customer_map,
 ):
+
     source = raw.copy()
+
+
+    # ========================================================
+    # Build source-side keys
+    # ========================================================
 
     source["FILE_OUTLET_KEY"] = (
         source["FILE_OUTLET_NO"]
@@ -1637,7 +1653,11 @@ def attach_customer_mapping(
         .map(norm_key)
     )
 
-    # First match by Outlet No
+
+    # ========================================================
+    # 1. First match by Outlet No
+    # ========================================================
+
     by_outlet = (
         customer_map
         .drop_duplicates(
@@ -1646,6 +1666,7 @@ def attach_customer_mapping(
         )
         .copy()
     )
+
 
     merged = source.merge(
         by_outlet,
@@ -1658,6 +1679,11 @@ def attach_customer_mapping(
         ),
     )
 
+
+    # ========================================================
+    # Find unmatched rows
+    # ========================================================
+
     unmatched = (
         merged["Outlet No"].isna()
         |
@@ -1666,8 +1692,13 @@ def attach_customer_mapping(
         .eq("")
     )
 
-    # Fallback by Rawdata Name
+
+    # ========================================================
+    # 2. Fallback match by Rawdata Name
+    # ========================================================
+
     if unmatched.any():
+
         by_raw = (
             customer_map[
                 customer_map["RAWDATA_KEY"].ne("")
@@ -1678,11 +1709,13 @@ def attach_customer_mapping(
             )
         )
 
+
         fallback_source = (
             source.loc[
                 unmatched.values
             ]
         )
+
 
         fallback = fallback_source.merge(
             by_raw,
@@ -1695,6 +1728,7 @@ def attach_customer_mapping(
             ),
         )
 
+
         mapping_columns = (
             CUSTOMER_REQUIRED
             + [
@@ -1705,11 +1739,15 @@ def attach_customer_mapping(
             ]
         )
 
+
         for column in mapping_columns:
+
             if (
                 column in fallback.columns
-                and column in merged.columns
+                and
+                column in merged.columns
             ):
+
                 merged.loc[
                     unmatched,
                     column
@@ -1717,7 +1755,11 @@ def attach_customer_mapping(
                     column
                 ].values
 
+
+    # ========================================================
     # Customer Mapping Status
+    # ========================================================
+
     merged[
         "CUSTOMER_MAPPING_STATUS"
     ] = merged[
@@ -1729,25 +1771,136 @@ def attach_customer_mapping(
         else "UNMAPPED"
     )
 
+
+    # ========================================================
     # Sales ID Check
+    # ========================================================
+
     merged[
         "SALES_ID_CHECK"
     ] = merged.apply(
         lambda row:
         (
             "UNMAPPED"
-            if row[
-                "CUSTOMER_MAPPING_STATUS"
-            ] == "UNMAPPED"
+            if (
+                row["CUSTOMER_MAPPING_STATUS"]
+                == "UNMAPPED"
+            )
             else (
                 "MATCH"
-                if norm_key(
-                    row["FILE_SALES_ID"]
+                if (
+                    norm_key(
+                        row["FILE_SALES_ID"]
+                    )
+                    ==
+                    norm_key(
+                        row["Sales ID"]
+                    )
                 )
-                ==
-                norm_key(
-                    row["Sales ID"]
-            # ============================================================
+                else "MISMATCH"
+            )
+        ),
+        axis=1,
+    )
+
+
+    # ========================================================
+    # Contract Check
+    # ========================================================
+
+    merged[
+        "CONTRACT_CHECK"
+    ] = merged.apply(
+        lambda row:
+        (
+            "UNMAPPED"
+            if (
+                row["CUSTOMER_MAPPING_STATUS"]
+                == "UNMAPPED"
+            )
+            else (
+                "MATCH"
+                if (
+                    norm_key(
+                        row["FILE_CONTRACT_JDE"]
+                    )
+                    ==
+                    norm_key(
+                        row["Contract JDE"]
+                    )
+                )
+                else "MISMATCH"
+            )
+        ),
+        axis=1,
+    )
+
+
+    # ========================================================
+    # Outlet No Check
+    # ========================================================
+
+    merged[
+        "OUTLET_CHECK"
+    ] = merged.apply(
+        lambda row:
+        (
+            "UNMAPPED"
+            if (
+                row["CUSTOMER_MAPPING_STATUS"]
+                == "UNMAPPED"
+            )
+            else (
+                "MATCH"
+                if (
+                    norm_key(
+                        row["FILE_OUTLET_NO"]
+                    )
+                    ==
+                    norm_key(
+                        row["Outlet No"]
+                    )
+                )
+                else "MISMATCH"
+            )
+        ),
+        axis=1,
+    )
+
+
+    # ========================================================
+    # Rawdata Name Check
+    # ========================================================
+
+    merged[
+        "RAWDATA_NAME_CHECK"
+    ] = merged.apply(
+        lambda row:
+        (
+            "UNMAPPED"
+            if (
+                row["CUSTOMER_MAPPING_STATUS"]
+                == "UNMAPPED"
+            )
+            else (
+                "MATCH"
+                if (
+                    norm_key(
+                        row["FILE_RAWDATA_NAME"]
+                    )
+                    ==
+                    norm_key(
+                        row["Rawdata Name"]
+                    )
+                )
+                else "MISMATCH"
+            )
+        ),
+        axis=1,
+    )
+
+
+    return merged
 
 # ============================================================
 # SKU Mapping Join
