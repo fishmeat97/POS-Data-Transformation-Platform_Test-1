@@ -4190,7 +4190,7 @@ st.dataframe(
 # ============================================================
 
 st.markdown(
-    "#### 🏪 店家繳交明細"
+    "#### 🍩 店家繳交明細"
 )
 
 
@@ -4440,7 +4440,7 @@ e1, e2, e3, e4 = (
 with e1:
 
     st.metric(
-        "🧩 SKU Unmapped",
+        "🍾 SKU Unmapped",
         f"{sku_unmapped:,}",
     )
 
@@ -4448,7 +4448,7 @@ with e1:
 with e2:
 
     st.metric(
-        "🏪 Customer Unmapped",
+        "🍪 Customer Unmapped",
         f"{customer_unmapped:,}",
     )
 
