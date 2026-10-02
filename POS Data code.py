@@ -118,7 +118,7 @@ with header_col2:
         <h1 style="
             margin-bottom: 0;
             padding-bottom: 0;
-            margin-left: -10px;
+            margin-left: -20px;
         ">
             POS Monthly Data Mapping
         </h1>
