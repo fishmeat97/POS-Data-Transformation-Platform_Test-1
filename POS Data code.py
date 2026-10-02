@@ -3263,7 +3263,7 @@ d4, d5, d6 = st.columns(3)
 with d1:
 
     st.metric(
-        "📥 來源資料",
+        "pernod-ricard 來源資料",
         f"{source_count:,}",
     )
 
@@ -4163,7 +4163,7 @@ if not sales_submission.empty:
 # ============================================================
 
 st.markdown(
-    "#### 👤 業務繳交進度"
+    "####  業務繳交進度"
 )
 
 
