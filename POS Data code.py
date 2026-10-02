@@ -8,6 +8,81 @@ import streamlit as st
 
 
 # ============================================================
+# UI SECTION HEADER
+# ============================================================
+
+def section_header(
+    step_number,
+    title,
+    subtitle="",
+):
+
+    st.markdown(
+f"""
+<div style="
+    background: linear-gradient(
+        90deg,
+        rgba(80,80,80,0.10),
+        rgba(80,80,80,0.03)
+    );
+    padding: 18px 22px;
+    border-radius: 14px;
+    border: 1px solid rgba(128,128,128,0.18);
+    margin-top: 24px;
+    margin-bottom: 16px;
+">
+<div style="
+    display: flex;
+    align-items: center;
+    gap: 14px;
+">
+
+<div style="
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    border-radius: 50%;
+    background: rgba(120,120,120,0.18);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 21px;
+    font-weight: 700;
+">
+{step_number}
+</div>
+
+<div>
+
+<div style="
+    font-size: 23px;
+    font-weight: 700;
+    margin-bottom: 2px;
+">
+{title}
+</div>
+
+<div style="
+    font-size: 14px;
+    color: #888;
+">
+{subtitle}
+</div>
+
+</div>
+
+</div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+
+
+
+
+# ============================================================
 # Page Config
 # ============================================================
 import streamlit as st
@@ -2550,31 +2625,11 @@ def excel_bytes(sheets):
 # STEP 1 - Upload Monthly Template
 # ============================================================
 
-# ============================================================
-# STEP 1 - Upload Monthly Template
-# ============================================================
-
-st.markdown(
-"""
-<div style="background: linear-gradient(90deg, rgba(80,80,80,0.10), rgba(80,80,80,0.03)); padding: 18px 22px; border-radius: 14px; border: 1px solid rgba(128,128,128,0.18); margin-bottom: 14px;">
-<div style="display: flex; align-items: center; gap: 14px;">
-<div style="width: 42px; height: 42px; border-radius: 50%; background: rgba(120,120,120,0.18); display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700;">
-1
-</div>
-<div>
-<div style="font-size: 23px; font-weight: 700; margin-bottom: 2px;">
-上傳當月份資料
-</div>
-<div style="font-size: 14px; color: #888;">
-Upload monthly POS templates
-</div>
-</div>
-</div>
-</div>
-""",
-    unsafe_allow_html=True,
+section_header(
+    "1",
+    "上傳當月份資料",
+    "Upload monthly POS templates",
 )
-
 
 template_files = st.file_uploader(
     "可一次上傳多個 Excel / CSV Template",
@@ -2587,40 +2642,21 @@ template_files = st.file_uploader(
     key="templates",
 )
 
-
 st.caption(
     "系統會自動辨識不同 Template 格式，不需要人工選擇格式。"
 )
-
 
 # ============================================================
 # STEP 2 - Upload Mapping
 # ============================================================
 
-st.markdown(
-"""
-<div style="background: linear-gradient(90deg, rgba(80,80,80,0.10), rgba(80,80,80,0.03)); padding: 18px 22px; border-radius: 14px; border: 1px solid rgba(128,128,128,0.18); margin-top: 28px; margin-bottom: 14px;">
-<div style="display: flex; align-items: center; gap: 14px;">
-<div style="width: 42px; height: 42px; border-radius: 50%; background: rgba(120,120,120,0.18); display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700;">
-2
-</div>
-<div>
-<div style="font-size: 23px; font-weight: 700; margin-bottom: 2px;">
-上傳 Mapping 資料
-</div>
-<div style="font-size: 14px; color: #888;">
-Upload customer and SKU mapping files
-</div>
-</div>
-</div>
-</div>
-""",
-    unsafe_allow_html=True,
+section_header(
+    "2",
+    "上傳 Mapping 資料",
+    "Upload customer and SKU mapping files",
 )
 
-
 map_col1, map_col2 = st.columns(2)
-
 
 with map_col1:
 
@@ -2634,7 +2670,6 @@ with map_col1:
         key="customer",
     )
 
-
 with map_col2:
 
     sku_file = st.file_uploader(
@@ -2646,6 +2681,20 @@ with map_col2:
         ],
         key="sku",
     )
+
+
+# ============================================================
+# STEP 3 - DASHBOARD
+# ============================================================
+
+section_header(
+    "3",
+    "Monthly Dashboard",
+    "Submission status, mapping quality and data reconciliation",
+)
+
+
+
 
 # ============================================================
 # Basic Validation
@@ -3026,15 +3075,6 @@ q3.metric(
     "合約編號不一致",
     f"{contract_mismatch:,}",
 )
-
-
-# ============================================================
-# DASHBOARD
-# ============================================================
-
-st.divider()
-
-st.title("📊 Monthly POS Dashboard")
 
 
 # ============================================================
@@ -3994,10 +4034,15 @@ exception3.metric(
 # ============================================================
 # Preview
 # ============================================================
-st.subheader(
-    "👀 Preview"
-)
+# ============================================================
+# STEP 4 - DATA PREVIEW
+# ============================================================
 
+section_header(
+    "4",
+    "Data Preview",
+    "Review final output, unmapped records and mapping exceptions",
+)
 tabs = st.tabs([
     "最終報表",
     "Customer Unmapped",
@@ -4182,8 +4227,14 @@ with tabs[6]:
 # ============================================================
 st.divider()
 
-st.subheader(
-    "⬇️ Export"
+# ============================================================
+# STEP 5 - EXPORT
+# ============================================================
+
+section_header(
+    "5",
+    "Export",
+    "Download final report, CSV and unmapped records",
 )
 
 unmapped_mask = (
