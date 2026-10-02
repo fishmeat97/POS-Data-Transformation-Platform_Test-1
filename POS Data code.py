@@ -3263,7 +3263,7 @@ d4, d5, d6 = st.columns(3)
 with d1:
 
     st.metric(
-        "pernod-ricard 來源資料",
+        "🐄 來源資料",
         f"{source_count:,}",
     )
 
@@ -3271,7 +3271,7 @@ with d1:
 with d2:
 
     st.metric(
-        "📤 輸出資料",
+        "🧀 輸出資料",
         f"{output_count:,}",
         delta=(
             f"{output_count - source_count:+,}"
@@ -3290,7 +3290,7 @@ with d3:
 with d4:
 
     st.metric(
-        "🧩 SKU Unmapped",
+        "🍾 SKU Unmapped",
         f"{sku_unmapped:,}",
     )
 
@@ -3298,7 +3298,7 @@ with d4:
 with d5:
 
     st.metric(
-        "✅ 成功檔案",
+        "✔️ 成功檔案",
         f"{successful_files:,}",
     )
 
@@ -3318,7 +3318,7 @@ if (
     == output_count
 ):
     st.success(
-        f"✅ 資料筆數一致：來源 {source_count:,} = 輸出 {output_count:,}。"
+        f"✔️ 資料筆數一致：來源 {source_count:,} = 輸出 {output_count:,}。"
         " Unmapped 資料仍保留，不會因 Mapping 失敗被刪除。"
     )
 
