@@ -101,14 +101,15 @@ st.set_page_config(
 # ============================================================
 
 header_col1, header_col2 = st.columns(
-    [1, 7],
-    vertical_alignment="center"
+    [0.8, 6],
+    vertical_alignment="center",
+    gap="small",
 )
 
 with header_col1:
     st.image(
         "logo.png",
-        width=110,
+        width=160,
     )
 
 with header_col2:
@@ -117,6 +118,7 @@ with header_col2:
         <h1 style="
             margin-bottom: 0;
             padding-bottom: 0;
+            margin-left: -10px;
         ">
             POS Monthly Data Mapping
         </h1>
@@ -125,6 +127,7 @@ with header_col2:
             color: grey;
             font-size: 16px;
             margin-top: 4px;
+            margin-left: -10px;
         ">
             Monthly POS Data Integration,
             Mapping & Submission Dashboard
