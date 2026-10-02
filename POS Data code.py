@@ -2546,41 +2546,135 @@ def excel_bytes(sheets):
 # ============================================================
 # UI - Template Upload
 # ============================================================
-st.subheader(
-    "1️⃣ 上傳當月份 Template"
+# ============================================================
+# STEP 1 - Upload Monthly Template
+# ============================================================
+
+st.markdown(
+    """
+    <div style="
+        background: linear-gradient(90deg, rgba(80,80,80,0.10), rgba(80,80,80,0.03));
+        padding: 18px 22px;
+        border-radius: 14px;
+        border: 1px solid rgba(128,128,128,0.18);
+        margin-bottom: 14px;
+    ">
+        <div style="
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        ">
+            <div style="
+                width: 42px;
+                height: 42px;
+                border-radius: 50%;
+                background: rgba(120,120,120,0.18);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 22px;
+                font-weight: 700;
+            ">
+                1
+            </div>
+
+            <div>
+                <div style="
+                    font-size: 23px;
+                    font-weight: 700;
+                    margin-bottom: 2px;
+                ">
+                    上傳當月份資料
+                </div>
+
+                <div style="
+                    font-size: 14px;
+                    color: #888;
+                ">
+                    Upload monthly POS templates
+                </div>
+            </div>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
 template_files = st.file_uploader(
-    "可同時上傳多個 Template，系統會自動辨識格式",
+    "可一次上傳多個 Excel / CSV Template",
     type=[
-        "csv",
         "xlsx",
         "xls",
+        "csv",
     ],
     accept_multiple_files=True,
-    key="monthly_templates",
+    key="templates",
 )
 
 st.caption(
-    "支援目前已確認的冠德、洋酒城、國泰、加州洋酒等格式；"
-    "使用者不需要手動選擇 Template 類型。"
+    "系統會自動辨識不同 Template 格式，不需要人工選擇格式。"
 )
 
 
 # ============================================================
-# UI - Mapping Upload
+# STEP 2 - Upload Mapping
 # ============================================================
-st.divider()
 
-st.subheader(
-    "2️⃣ 上傳 Mapping 資料"
+st.markdown(
+    """
+    <div style="
+        background: linear-gradient(90deg, rgba(80,80,80,0.10), rgba(80,80,80,0.03));
+        padding: 18px 22px;
+        border-radius: 14px;
+        border: 1px solid rgba(128,128,128,0.18);
+        margin-top: 28px;
+        margin-bottom: 14px;
+    ">
+        <div style="
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        ">
+            <div style="
+                width: 42px;
+                height: 42px;
+                border-radius: 50%;
+                background: rgba(120,120,120,0.18);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 22px;
+                font-weight: 700;
+            ">
+                2
+            </div>
+
+            <div>
+                <div style="
+                    font-size: 23px;
+                    font-weight: 700;
+                    margin-bottom: 2px;
+                ">
+                    上傳 Mapping 資料
+                </div>
+
+                <div style="
+                    font-size: 14px;
+                    color: #888;
+                ">
+                    Upload customer and SKU mapping files
+                </div>
+            </div>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
-map_col1, map_col2 = (
-    st.columns(2)
-)
+map_col1, map_col2 = st.columns(2)
 
 with map_col1:
+
     customer_file = st.file_uploader(
         "Customer Mapping",
         type=[
@@ -2588,10 +2682,11 @@ with map_col1:
             "xls",
             "csv",
         ],
-        key="customer_mapping",
+        key="customer",
     )
 
 with map_col2:
+
     sku_file = st.file_uploader(
         "SKU Mapping",
         type=[
@@ -2599,15 +2694,8 @@ with map_col2:
             "xls",
             "csv",
         ],
-        key="sku_mapping",
+        key="sku",
     )
-
-st.caption(
-    "若 Mapping 放在同一份 Excel，"
-    "Customer Mapping 會優先找 Customer data sheet，"
-    "SKU Mapping 會優先找 SKU data sheet。"
-)
-
 
 # ============================================================
 # Basic Validation
