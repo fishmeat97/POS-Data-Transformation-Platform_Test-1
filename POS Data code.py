@@ -3427,71 +3427,135 @@ actual_upload_month = (
 
 
 # ============================================================
+# ============================================================
 # 11. HANDLE DUPLICATE UPLOAD
 #
-# Same Month + Sales + Contract + Outlet
+# Same:
+# Period + Sales + Contract + Outlet
 #
-# SUCCESS priority
+# Priority:
+# SUCCESS > FAILED
+#
+# 如果同一家同月份重複上傳，
+# 只要其中有一份成功，就視為成功。
 # ============================================================
 
-def choose_best_upload(group):
-
-    success_rows = group[
-        group[
-            "狀態"
+actual_upload_month = (
+    actual_upload[
+        actual_upload[
+            "PERIOD_KEY"
         ]
-        == "SUCCESS"
+        == selected_period
     ]
-
-    if not success_rows.empty:
-
-        return success_rows.iloc[-1]
-
-    return group.iloc[-1]
+    .copy()
+)
 
 
-if not actual_upload_month.empty:
+# ============================================================
+# Create Status Priority
+#
+# SUCCESS = 1
+# FAILED  = 0
+# ============================================================
 
-    actual_upload_best = (
-        actual_upload_month
-        .groupby(
+actual_upload_month[
+    "_STATUS_PRIORITY"
+] = (
+    actual_upload_month[
+        "狀態"
+    ]
+    .map({
+        "SUCCESS": 1,
+        "FAILED": 0,
+    })
+    .fillna(0)
+)
+
+
+# ============================================================
+# Sort:
+#
+# Same UPLOAD_KEY:
+# SUCCESS 放最後
+#
+# drop_duplicates keep="last"
+# 就會留下 SUCCESS
+# ============================================================
+
+actual_upload_best = (
+    actual_upload_month
+    .sort_values(
+        by=[
             "UPLOAD_KEY",
-            group_keys=False,
-        )
-        .apply(
-            choose_best_upload,
-        )
-        .reset_index(
-            drop=True
-        )
+            "_STATUS_PRIORITY",
+        ],
+        ascending=[
+            True,
+            True,
+        ],
     )
-
-else:
-
-    actual_upload_best = (
-        actual_upload_month
-        .copy()
+    .drop_duplicates(
+        subset=[
+            "UPLOAD_KEY"
+        ],
+        keep="last",
     )
+    .drop(
+        columns=[
+            "_STATUS_PRIORITY"
+        ],
+        errors="ignore",
+    )
+    .reset_index(
+        drop=True
+    )
+)
 
 
 # ============================================================
 # 12. EXPECTED VS ACTUAL
 # ============================================================
 
+# ------------------------------------------------------------
+# Make sure required columns always exist
+# ------------------------------------------------------------
+
+required_upload_columns = [
+    "UPLOAD_KEY",
+    "檔案",
+    "辨識格式",
+    "狀態",
+    "錯誤",
+    "原始筆數",
+    "年月",
+    "檔名格式",
+]
+
+
+for column in required_upload_columns:
+
+    if column not in actual_upload_best.columns:
+
+        actual_upload_best[
+            column
+        ] = pd.NA
+
+
+# ------------------------------------------------------------
+# LEFT JOIN
+#
+# Expected Submission
+#        ↓
+# Actual Upload
+#
+# 沒上傳的店家仍然保留
+# ------------------------------------------------------------
+
 submission_detail = (
     expected_submission
     .merge(
         actual_upload_best[
-            [
-                "UPLOAD_KEY",
-                "檔案",
-                "辨識格式",
-                "狀態",
-                "錯誤",
-                "原始筆數",
-                "年月",
-                "檔名格式",
-            ]
+            required_upload_columns
         ],
         how="left",
         left_on="EXPECTED_KEY",
