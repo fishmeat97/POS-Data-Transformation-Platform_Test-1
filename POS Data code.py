@@ -1755,7 +1755,7 @@ def build_report(detail):
     ]
 
     report["品牌"] = detail[
-        "Band"
+        "Brand"
     ]
 
     report["統一品項名稱"] = detail[
