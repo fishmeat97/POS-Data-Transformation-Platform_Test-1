@@ -93,6 +93,102 @@ st.set_page_config(
     layout="wide",
 )
 
+
+# ============================================================
+# GLOBAL DASHBOARD STYLE
+# ============================================================
+
+st.markdown(
+"""
+<style>
+
+/* =========================================================
+   Metric Card
+   ========================================================= */
+
+div[data-testid="stMetric"] {
+
+    background:
+        linear-gradient(
+            135deg,
+            rgba(120,120,120,0.08),
+            rgba(120,120,120,0.025)
+        );
+
+    border:
+        1px solid
+        rgba(128,128,128,0.18);
+
+    padding:
+        20px 22px;
+
+    border-radius:
+        16px;
+
+    min-height:
+        125px;
+
+    transition:
+        all 0.2s ease;
+}
+
+
+/* Hover effect */
+
+div[data-testid="stMetric"]:hover {
+
+    transform:
+        translateY(-2px);
+
+    box-shadow:
+        0 6px 18px
+        rgba(0,0,0,0.06);
+}
+
+
+/* Metric label */
+
+div[data-testid="stMetricLabel"] {
+
+    font-size:
+        14px;
+
+    font-weight:
+        500;
+
+    opacity:
+        0.75;
+}
+
+
+/* Metric value */
+
+div[data-testid="stMetricValue"] {
+
+    font-size:
+        32px;
+
+    font-weight:
+        700;
+
+    margin-top:
+        8px;
+}
+
+
+/* Metric delta */
+
+div[data-testid="stMetricDelta"] {
+
+    font-size:
+        13px;
+}
+
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
 # ============================================================
 # HEADER
 # ============================================================
