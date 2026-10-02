@@ -3949,14 +3949,14 @@ st.markdown("---")
 if selected_period:
 
     st.markdown(
-        f"### 📅 {selected_period[:4]} / "
+        f"### 🔄 {selected_period[:4]} / "
         f"{selected_period[4:]} 繳交進度"
     )
 
 else:
 
     st.markdown(
-        "### 📅 繳交進度"
+        "### 🔄 繳交進度"
     )
 
 
@@ -3980,7 +3980,7 @@ with s1:
 with s2:
 
     st.metric(
-        "✅ 成功繳交",
+        "✔️ 成功繳交",
         f"{success_count:,}",
     )
 
@@ -4163,7 +4163,7 @@ if not sales_submission.empty:
 # ============================================================
 
 st.markdown(
-    "####  業務繳交進度"
+    "####  👀業務繳交進度"
 )
 
 
