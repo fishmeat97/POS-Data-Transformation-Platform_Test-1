@@ -3454,15 +3454,99 @@ actual_upload[
 # 10. FILTER SELECTED MONTH
 # ============================================================
 
+# ============================================================
+# HANDLE DUPLICATE UPLOAD
+#
+# 同月份 + 同業務 + 同合約 + 同店家
+#
+# SUCCESS 優先於 FAILED
+# ============================================================
+
 actual_upload_month = (
     actual_upload[
-        actual_upload[
-            "PERIOD_KEY"
-        ]
+        actual_upload["PERIOD_KEY"]
         == selected_period
     ]
     .copy()
 )
+
+
+# ============================================================
+# Ensure UPLOAD_KEY exists
+# ============================================================
+
+if "UPLOAD_KEY" not in actual_upload_month.columns:
+
+    actual_upload_month["UPLOAD_KEY"] = (
+        actual_upload_month["PERIOD_KEY"].fillna("").astype(str)
+        + "|"
+        + actual_upload_month["SALES_KEY"].fillna("").astype(str)
+        + "|"
+        + actual_upload_month["CONTRACT_KEY"].fillna("").astype(str)
+        + "|"
+        + actual_upload_month["OUTLET_TRACKING_KEY"].fillna("").astype(str)
+    )
+
+
+# ============================================================
+# Status Priority
+#
+# SUCCESS = 2
+# FAILED  = 1
+# Others  = 0
+# ============================================================
+
+actual_upload_month["_STATUS_PRIORITY"] = (
+    actual_upload_month["狀態"]
+    .map({
+        "SUCCESS": 2,
+        "FAILED": 1,
+    })
+    .fillna(0)
+    .astype(int)
+)
+
+
+# ============================================================
+# Duplicate Processing
+# ============================================================
+
+if actual_upload_month.empty:
+
+    actual_upload_best = (
+        actual_upload_month
+        .drop(
+            columns=["_STATUS_PRIORITY"],
+            errors="ignore",
+        )
+        .copy()
+    )
+
+else:
+
+    actual_upload_best = (
+        actual_upload_month
+        .sort_values(
+            by=[
+                "UPLOAD_KEY",
+                "_STATUS_PRIORITY",
+            ],
+            ascending=[
+                True,
+                False,
+            ],
+            na_position="last",
+        )
+        .drop_duplicates(
+            subset=["UPLOAD_KEY"],
+            keep="first",
+        )
+        .drop(
+            columns=["_STATUS_PRIORITY"],
+            errors="ignore",
+        )
+        .reset_index(drop=True)
+    )
 
 
 # ============================================================
