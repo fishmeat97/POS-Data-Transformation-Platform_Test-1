@@ -3235,19 +3235,39 @@ reporting_period = selected_period
 # Customer Mapping = 每月應繳名單
 # ============================================================
 
-expected_submission = (
-    customer_map[
-        [
-            "Sales ID",
-            "Sales",
-            "Contract JDE",
-            "Contract NAME",
-            "Outlet No",
-            "Outlet NAME",
-            "Rawdata Name",
-        ]
+expected_submission[
+    "SALES_KEY"
+] = (
+    expected_submission[
+        "Sales ID"
     ]
-    .copy()
+    .map(
+        norm_id_key
+    )
+)
+
+
+expected_submission[
+    "CONTRACT_KEY"
+] = (
+    expected_submission[
+        "Contract JDE"
+    ]
+    .map(
+        norm_id_key
+    )
+)
+
+
+expected_submission[
+    "OUTLET_TRACKING_KEY"
+] = (
+    expected_submission[
+        "Outlet No"
+    ]
+    .map(
+        norm_id_key
+    )
 )
 
 
@@ -3361,7 +3381,7 @@ actual_upload[
         "業務代號"
     ]
     .map(
-        norm_key
+        norm_id_key
     )
 )
 
@@ -3373,7 +3393,7 @@ actual_upload[
         "合約編號"
     ]
     .map(
-        norm_key
+        norm_id_key
     )
 )
 
@@ -3385,29 +3405,8 @@ actual_upload[
         "店家編號"
     ]
     .map(
-        norm_key
+        norm_id_key
     )
-)
-
-
-actual_upload[
-    "UPLOAD_KEY"
-] = (
-    actual_upload[
-        "PERIOD_KEY"
-    ]
-    + "|"
-    + actual_upload[
-        "SALES_KEY"
-    ]
-    + "|"
-    + actual_upload[
-        "CONTRACT_KEY"
-    ]
-    + "|"
-    + actual_upload[
-        "OUTLET_TRACKING_KEY"
-    ]
 )
 
 
@@ -3563,6 +3562,33 @@ submission_detail = (
     )
 )
 
+
+
+# ============================================================
+# FIND UPLOADS NOT MATCHED TO EXPECTED SUBMISSION
+# ============================================================
+
+matched_upload_keys = set(
+    submission_detail[
+        "UPLOAD_KEY"
+    ]
+    .dropna()
+    .astype(str)
+)
+
+
+unmatched_uploads = (
+    actual_upload_best[
+        ~actual_upload_best[
+            "UPLOAD_KEY"
+        ]
+        .astype(str)
+        .isin(
+            matched_upload_keys
+        )
+    ]
+    .copy()
+)
 
 # ============================================================
 # 13. SUBMISSION STATUS
