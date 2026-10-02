@@ -3282,7 +3282,7 @@ with d2:
 with d3:
 
     st.metric(
-        "🏪 Customer Unmapped",
+        "🍪 Customer Unmapped",
         f"{customer_unmapped:,}",
     )
 
