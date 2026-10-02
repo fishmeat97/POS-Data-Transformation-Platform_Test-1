@@ -18,8 +18,8 @@ st.set_page_config(
 
 st.title("📊 POS Monthly Data Mapping")
 st.caption(
-    "單一入口上傳多個月度 Template，系統自動辨識格式，"
-    "再執行 Customer Mapping、SKU Mapping、資料勾稽與報表輸出。"
+    "POS Data 每月上傳"
+    "Customer Mapping SKU Mapping。"
 )
 
 
@@ -67,8 +67,9 @@ CUSTOMER_REQUIRED = [
 
 SKU_REQUIRED = [
     "Mapping Name",
+    "SKU NAME",
     "Manufacture",
-    "Band",
+    "Brand",
     "RSP",
     "Price Band",
     "SIZE",
