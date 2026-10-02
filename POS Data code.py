@@ -390,16 +390,10 @@ def transform_template_1(uploaded_file):
         df[qty_col]
     )
 
-    output["UNIT_PRICE"] = (
-        numeric(df[unit_price_col])
-        if unit_price_col
-        else pd.NA
+    output["UNIT_PRICE"] = pd.NA
     )
 
-    output["TOTAL_PRICE"] = (
-        numeric(df[total_price_col])
-        if total_price_col
-        else pd.NA
+    output["TOTAL_PRICE"] = pd.NA
     )
 
     brand_col = first_matching_column(
@@ -457,13 +451,17 @@ def transform_template_1(uploaded_file):
 # Example: 洋酒城系列
 # ============================================================
 # ============================================================
+# ============================================================
 # TEMPLATE 2
 # Horizontal Monthly Actual Sales
 #
 # 商品名稱   -> RAW_SKU
+# 商品代號   -> RAW_PRODUCT_CODE
 # 實銷       -> QTY
-# 菸專牌價   -> UNIT_PRICE
-# QTY * UNIT_PRICE -> TOTAL_PRICE
+#
+# PRICE LOGIC:
+# 不使用 Template 內任何價格
+# 單價 / 總價後續統一使用 SKU Mapping 的 RSP 計算
 # ============================================================
 
 def transform_template_2(uploaded_file):
@@ -472,11 +470,17 @@ def transform_template_2(uploaded_file):
         uploaded_file.name
     )
 
+
+    # ========================================================
+    # 1. Read Excel
+    # ========================================================
+
     raw = read_excel_bytes(
         uploaded_file,
         sheet_name=0,
         header=None,
     )
+
 
     if len(raw) < 4:
         raise ValueError(
@@ -485,10 +489,15 @@ def transform_template_2(uploaded_file):
 
 
     # ========================================================
-    # 1. 找 Header Row
+    # 2. Find Header Row
+    #
+    # 必須同時找到：
+    # 商品代號
+    # 商品名稱
     # ========================================================
 
     header_row = None
+
 
     for i in range(
         min(
@@ -502,24 +511,28 @@ def transform_template_2(uploaded_file):
             for x in raw.iloc[i].tolist()
         ]
 
+
         if (
             "商品代號" in values
             and
             "商品名稱" in values
         ):
+
             header_row = i
             break
 
 
     if header_row is None:
+
         raise ValueError(
             "Template 2 找不到「商品代號 / 商品名稱」表頭。"
         )
 
 
     # ========================================================
-    # 2. 日期列
-    # 通常在 Header 上一列
+    # 3. Date Row
+    #
+    # 月份通常位於 Header 上一列
     # ========================================================
 
     date_row = max(
@@ -544,96 +557,98 @@ def transform_template_2(uploaded_file):
 
 
     # ========================================================
-    # 3. Forward Fill 日期
+    # 4. Forward Fill Date Headers
+    #
+    # Excel 常使用 Merge Cell
+    # 因此日期只會出現在區塊第一欄
     # ========================================================
 
     ff_dates = []
 
-    current = None
+    current_date = None
 
-    for x in dates:
+
+    for value in dates:
 
         if (
-            pd.notna(x)
-            and norm_text(x)
+            pd.notna(value)
+            and
+            norm_text(value)
         ):
-            current = x
+
+            current_date = value
+
 
         ff_dates.append(
-            current
+            current_date
         )
 
 
     # ========================================================
-    # 4. 商品代號
+    # 5. Find Product Code Column
     # ========================================================
 
     product_code_idx = next(
         (
             i
-            for i, h in enumerate(headers)
-            if h == "商品代號"
+            for i, header
+            in enumerate(headers)
+            if header == "商品代號"
         ),
         None,
     )
 
 
     # ========================================================
-    # 5. 商品名稱
+    # 6. Find Product Name Column
     # ========================================================
 
     product_name_idx = next(
         (
             i
-            for i, h in enumerate(headers)
-            if h == "商品名稱"
+            for i, header
+            in enumerate(headers)
+            if header == "商品名稱"
         ),
         None,
     )
 
 
     if product_name_idx is None:
+
         raise ValueError(
-            "Template 2 找不到商品名稱。"
+            "Template 2 找不到「商品名稱」欄位。"
         )
 
 
     # ========================================================
-    # 6. 找「菸專牌價」
+    # 7. Reporting Period from Filename
     # ========================================================
 
-    unit_price_idx = next(
-        (
-            i
-            for i, h in enumerate(headers)
-            if "菸專牌價" in h
-        ),
-        None,
-    )
+    target_year = meta[
+        "YEAR"
+    ]
 
-
-    if unit_price_idx is None:
-        raise ValueError(
-            "Template 2 找不到「菸專牌價」欄位。"
-        )
+    target_month = meta[
+        "MONTH"
+    ]
 
 
     # ========================================================
-    # 7. 目標年月
-    # ========================================================
-
-    target_year = meta["YEAR"]
-    target_month = meta["MONTH"]
-
-
-    # ========================================================
-    # 8. 找對應月份的「實銷」
+    # 8. Find Correct Actual Sales Column
+    #
+    # 實銷 = QTY
+    #
+    # 優先：
+    # 找檔名年月相同的「實銷」
     # ========================================================
 
     actual_sales_idx = None
 
 
-    for i, header in enumerate(headers):
+    for i, header in enumerate(
+        headers
+    ):
 
         if "實銷" not in header:
             continue
@@ -647,10 +662,14 @@ def transform_template_2(uploaded_file):
 
         if (
             pd.notna(date_value)
-            and target_year is not None
-            and target_month is not None
-            and date_value.year == target_year
-            and date_value.month == target_month
+            and
+            target_year is not None
+            and
+            target_month is not None
+            and
+            date_value.year == target_year
+            and
+            date_value.month == target_month
         ):
 
             actual_sales_idx = i
@@ -660,7 +679,8 @@ def transform_template_2(uploaded_file):
     # ========================================================
     # 9. Fallback
     #
-    # 找不到指定月份時，使用第一個實銷欄位
+    # 如果無法由日期精準判斷
+    # 使用第一個「實銷」欄位
     # ========================================================
 
     if actual_sales_idx is None:
@@ -668,21 +688,23 @@ def transform_template_2(uploaded_file):
         actual_sales_idx = next(
             (
                 i
-                for i, h in enumerate(headers)
-                if "實銷" in h
+                for i, header
+                in enumerate(headers)
+                if "實銷" in header
             ),
             None,
         )
 
 
     if actual_sales_idx is None:
+
         raise ValueError(
             "Template 2 找不到「實銷」欄位。"
         )
 
 
     # ========================================================
-    # 10. Data Area
+    # 10. Extract Data Area
     # ========================================================
 
     data = (
@@ -691,19 +713,25 @@ def transform_template_2(uploaded_file):
             header_row + 1:
         ]
         .copy()
-        .reset_index(drop=True)
+        .reset_index(
+            drop=True
+        )
     )
 
 
     data = (
         data
-        .dropna(how="all")
-        .reset_index(drop=True)
+        .dropna(
+            how="all"
+        )
+        .reset_index(
+            drop=True
+        )
     )
 
 
     # ========================================================
-    # 11. Raw SKU
+    # 11. Extract Raw SKU
     # ========================================================
 
     raw_sku = data.iloc[
@@ -713,7 +741,9 @@ def transform_template_2(uploaded_file):
 
 
     # ========================================================
-    # 12. Quantity = 實銷
+    # 12. Extract Quantity
+    #
+    # 實銷 -> QTY
     # ========================================================
 
     qty = numeric(
@@ -725,72 +755,55 @@ def transform_template_2(uploaded_file):
 
 
     # ========================================================
-    # 13. Unit Price = 菸專牌價
-    # ========================================================
-
-    unit_price = numeric(
-        data.iloc[
-            :,
-            unit_price_idx
-        ]
-    )
-
-
-    # ========================================================
-    # 14. Valid Rows
+    # 13. Valid Product Rows
+    #
     # 只保留有商品名稱的資料
     # ========================================================
 
     valid = (
         raw_sku
-        .map(norm_text)
+        .map(
+            norm_text
+        )
         .ne("")
     )
 
 
     data = (
         data
-        .loc[valid]
-        .reset_index(drop=True)
+        .loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
     )
 
 
     raw_sku = (
         raw_sku
-        .loc[valid]
-        .reset_index(drop=True)
+        .loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
     )
 
 
     qty = (
         qty
-        .loc[valid]
-        .reset_index(drop=True)
-    )
-
-
-    unit_price = (
-        unit_price
-        .loc[valid]
-        .reset_index(drop=True)
-    )
-
-
-    # ========================================================
-    # 15. Total Price
-    #
-    # 實銷 × 菸專牌價
-    # ========================================================
-
-    total_price = (
-        qty
-        *
-        unit_price
+        .loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
     )
 
 
     # ========================================================
-    # 16. Build Output
+    # 14. Build Standard Output
     # ========================================================
 
     output = base_records(
@@ -805,33 +818,61 @@ def transform_template_2(uploaded_file):
     # Customer
     # ========================================================
 
-    output["RAW_CUSTOMER"] = meta[
+    output[
+        "RAW_CUSTOMER"
+    ] = meta[
         "FILE_RAWDATA_NAME"
     ]
 
 
-    output["RAW_ROW_CUSTOMER"] = ""
+    output[
+        "RAW_ROW_CUSTOMER"
+    ] = ""
 
 
     # ========================================================
     # SKU
     # ========================================================
 
-    output["RAW_SKU"] = (
+    output[
+        "RAW_SKU"
+    ] = (
         raw_sku
-        .map(norm_text)
+        .map(
+            norm_text
+        )
     )
 
 
     # ========================================================
-    # Quantity / Price
+    # Quantity
     # ========================================================
 
-    output["QTY"] = qty
+    output[
+        "QTY"
+    ] = qty
 
-    output["UNIT_PRICE"] = unit_price
 
-    output["TOTAL_PRICE"] = total_price
+    # ========================================================
+    # Price
+    #
+    # IMPORTANT:
+    # Template 2 不使用原始價格
+    #
+    # Report 階段：
+    #
+    # 單價 = RSP
+    # 總價 = QTY × RSP
+    # ========================================================
+
+    output[
+        "UNIT_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "TOTAL_PRICE"
+    ] = pd.NA
 
 
     # ========================================================
@@ -840,20 +881,29 @@ def transform_template_2(uploaded_file):
 
     if product_code_idx is not None:
 
-        output["RAW_PRODUCT_CODE"] = (
+        output[
+            "RAW_PRODUCT_CODE"
+        ] = (
+
             data.iloc[
                 :,
                 product_code_idx
-            ].values
+            ]
+            .map(
+                norm_text
+            )
+            .values
         )
 
     else:
 
-        output["RAW_PRODUCT_CODE"] = ""
+        output[
+            "RAW_PRODUCT_CODE"
+        ] = ""
 
 
     # ========================================================
-    # Debug / Audit
+    # Audit Information
     # ========================================================
 
     output[
@@ -863,11 +913,10 @@ def transform_template_2(uploaded_file):
 
     output[
         "SOURCE_PRICE_COLUMN"
-    ] = "菸專牌價"
+    ] = "RSP_FROM_SKU_MAPPING"
 
 
     return output
-
 
 # ============================================================
 # TEMPLATE 3A
@@ -2193,118 +2242,245 @@ def attach_sku_mapping(
 # ============================================================
 # Build Final Report
 # ============================================================
+# ============================================================
+# SAFE COLUMN GETTER
+# ============================================================
+
+def safe_column(
+    df,
+    column_name,
+    default=pd.NA,
+):
+
+    if column_name in df.columns:
+
+        return df[
+            column_name
+        ]
+
+    return pd.Series(
+        [default] * len(df),
+        index=df.index,
+    )
+
+
+# ============================================================
+# BUILD FINAL REPORT
+#
+# PRICE LOGIC:
+# 單價     = RSP
+# 總價     = QTY * RSP
+# 建議售價 = RSP
+#
+# SKU LOGIC:
+# Template 商品名稱
+#       ↓
+# RAW_SKU
+#       ↓
+# JOIN SKU Mapping["SKU Name"]
+#       ↓
+# Mapping Name / Brand / RSP / etc.
+# ============================================================
+
 def build_report(detail):
+
     report = pd.DataFrame(
         index=detail.index
     )
 
-    report["地區"] = detail[
-        "REGION"
-    ]
 
-    report["業務員"] = detail[
-        "Sales"
-    ]
+    # ========================================================
+    # 1. CUSTOMER MAPPING FIELDS
+    # ========================================================
 
-    report["合約等級"] = detail[
-        "CONTRACT TYPE"
-    ]
-
-    report["合約編號"] = detail[
-        "Contract JDE"
-    ]
-
-    report["合約名稱"] = detail[
-        "Contract NAME"
-    ]
-
-    report["店家編號"] = detail[
-        "Outlet No"
-    ]
-
-    report["店家名稱"] = detail[
-        "Outlet NAME"
-    ]
-
-    report["銷量(瓶)"] = detail[
-        "QTY"
-    ]
-
-    report["單價"] = detail[
-        "UNIT_PRICE"
-    ]
-
-    calculated_total = (
-        pd.to_numeric(
-            detail["QTY"],
-            errors="coerce",
-        )
-        *
-        pd.to_numeric(
-            detail["UNIT_PRICE"],
-            errors="coerce",
-        )
+    report["地區"] = safe_column(
+        detail,
+        "REGION",
     )
 
-    total_price = pd.to_numeric(
-        detail["TOTAL_PRICE"],
+
+    report["業務員"] = safe_column(
+        detail,
+        "Sales",
+    )
+
+
+    report["合約等級"] = safe_column(
+        detail,
+        "CONTRACT TYPE",
+    )
+
+
+    report["合約編號"] = safe_column(
+        detail,
+        "Contract JDE",
+    )
+
+
+    report["合約名稱"] = safe_column(
+        detail,
+        "Contract NAME",
+    )
+
+
+    report["店家編號"] = safe_column(
+        detail,
+        "Outlet No",
+    )
+
+
+    report["店家名稱"] = safe_column(
+        detail,
+        "Outlet NAME",
+    )
+
+
+    # ========================================================
+    # 2. SALES QUANTITY
+    # ========================================================
+
+    qty = pd.to_numeric(
+        safe_column(
+            detail,
+            "QTY",
+        ),
         errors="coerce",
     )
 
+
+    report["銷量(瓶)"] = qty
+
+
+    # ========================================================
+    # 3. RSP
+    #
+    # All price-related fields use SKU Mapping RSP
+    # ========================================================
+
+    rsp = pd.to_numeric(
+        safe_column(
+            detail,
+            "RSP",
+        ),
+        errors="coerce",
+    )
+
+
+    # 單價 = RSP
+    report["單價"] = rsp
+
+
+    # 總價 = QTY × RSP
     report["總價"] = (
-        total_price.where(
-            total_price.notna(),
-            calculated_total,
-        )
+        qty
+        *
+        rsp
     )
 
-    report["建議售價"] = pd.to_numeric(
-        detail["RSP"],
-        errors="coerce",
+
+    # 建議售價 = RSP
+    report["建議售價"] = rsp
+
+
+    # ========================================================
+    # 4. SKU MAPPING FIELDS
+    # ========================================================
+
+    report["價格帶"] = safe_column(
+        detail,
+        "Price Band",
     )
 
-    report["價格帶"] = detail[
-        "Price Band"
-    ]
 
-    report["製造商"] = detail[
-        "Manufacture"
-    ]
+    report["製造商"] = safe_column(
+        detail,
+        "Manufacture",
+    )
 
-    report["品牌"] = detail[
-        "Brand"
-    ]
 
-    report["統一品項名稱"] = detail[
-        "Mapping Name"
-    ]
+    report["品牌"] = safe_column(
+        detail,
+        "Brand",
+    )
 
-    report["品項"] = detail[
-        "RAW_SKU"
-    ]
 
-    report["容量"] = detail[
-        "SIZE"
-    ]
+    report["統一品項名稱"] = safe_column(
+        detail,
+        "Mapping Name",
+    )
 
-    report["品類"] = detail[
-        "CATEGORY"
-    ]
+
+    # ========================================================
+    # 5. ORIGINAL SKU NAME
+    #
+    # 保留原始 Template 商品名稱
+    # ========================================================
+
+    report["品項"] = safe_column(
+        detail,
+        "RAW_SKU",
+    )
+
+
+    report["容量"] = safe_column(
+        detail,
+        "SIZE",
+    )
+
+
+    report["品類"] = safe_column(
+        detail,
+        "CATEGORY",
+    )
+
+
+    # ========================================================
+    # 6. YEAR / MONTH
+    # ========================================================
 
     report["年"] = pd.to_numeric(
-        detail["YEAR"],
+        safe_column(
+            detail,
+            "YEAR",
+        ),
         errors="coerce",
-    ).astype("Int64")
+    ).astype(
+        "Int64"
+    )
+
 
     report["月"] = pd.to_numeric(
-        detail["MONTH"],
+        safe_column(
+            detail,
+            "MONTH",
+        ),
         errors="coerce",
-    ).astype("Int64")
+    ).astype(
+        "Int64"
+    )
 
-    return report[
+
+    # ========================================================
+    # 7. ENSURE ALL OUTPUT COLUMNS EXIST
+    # ========================================================
+
+    for column in OUTPUT_COLUMNS:
+
+        if column not in report.columns:
+
+            report[column] = pd.NA
+
+
+    # ========================================================
+    # 8. FORCE FINAL COLUMN ORDER
+    # ========================================================
+
+    report = report[
         OUTPUT_COLUMNS
     ]
 
+
+    return report
 
 # ============================================================
 # Excel Export
