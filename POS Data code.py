@@ -1398,7 +1398,7 @@ def prepare_sku_mapping(df):
     })
 
     mapping["SKU_KEY"] = (
-        mapping["Mapping Name"]
+        mapping["SKU Name"]
         .map(norm_key)
     )
 
