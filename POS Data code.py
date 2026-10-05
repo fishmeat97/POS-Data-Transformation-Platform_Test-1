@@ -3964,7 +3964,7 @@ s1, s2, s3, s4, s5 = (
 with s1:
 
     st.metric(
-        "📋 本月應繳",
+        "📋 本月應繳 (待確認FY27合約數!)",
         f"{expected_count:,}",
     )
 
