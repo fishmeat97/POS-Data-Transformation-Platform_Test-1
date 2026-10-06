@@ -4598,8 +4598,8 @@ tabs = st.tabs([
     "SKU Unmapped",
     "全部 Unmapped",
     "上傳明細",
-    "Customer Mapping 重複",
-    "SKU Mapping 重複",
+   # "Customer Mapping 重複",
+   # "SKU Mapping 重複",
 ])
 
 
