@@ -2451,7 +2451,12 @@ def detect_template_type(uploaded_file):
 # ============================================================
 # Unified Auto Transformer
 # ============================================================
+# ============================================================
+# Unified Auto Transformer
+# ============================================================
+
 def auto_transform_template(uploaded_file):
+
     uploaded_file.seek(0)
 
     template_type = detect_template_type(
@@ -2460,7 +2465,13 @@ def auto_transform_template(uploaded_file):
 
     uploaded_file.seek(0)
 
+
+    # ========================================================
+    # TEMPLATE 1
+    # ========================================================
+
     if template_type == "TEMPLATE_1":
+
         result = transform_template_1(
             uploaded_file
         )
@@ -2470,7 +2481,15 @@ def auto_transform_template(uploaded_file):
             "Template 1｜標準 POS SKU 表",
         )
 
+
+    # ========================================================
+    # TEMPLATE 2
+    # ========================================================
+
     elif template_type == "TEMPLATE_2":
+
+        uploaded_file.seek(0)
+
         result = transform_template_2(
             uploaded_file
         )
@@ -2480,20 +2499,37 @@ def auto_transform_template(uploaded_file):
             "Template 2｜月份實銷表",
         )
 
+
+    # ========================================================
+    # TEMPLATE 3
+    # ========================================================
+
     elif template_type == "TEMPLATE_3":
+
         uploaded_file.seek(0)
 
         excel_file = pd.ExcelFile(
             uploaded_file
         )
 
-        # Multi-sheet first
-        if len(excel_file.sheet_names) > 1:
+
+        # ----------------------------------------------------
+        # Template 3A
+        # Multi-sheet
+        # ----------------------------------------------------
+
+        if len(
+            excel_file.sheet_names
+        ) > 1:
+
             try:
+
                 uploaded_file.seek(0)
 
-                result = transform_template_3_multisheet(
-                    uploaded_file
+                result = (
+                    transform_template_3_multisheet(
+                        uploaded_file
+                    )
                 )
 
                 return (
@@ -2504,10 +2540,18 @@ def auto_transform_template(uploaded_file):
             except Exception:
                 pass
 
+
+        # ----------------------------------------------------
+        # Template 3B
+        # Single-sheet
+        # ----------------------------------------------------
+
         uploaded_file.seek(0)
 
-        result = transform_template_3_salesdetail(
-            uploaded_file
+        result = (
+            transform_template_3_salesdetail(
+                uploaded_file
+            )
         )
 
         return (
@@ -2516,24 +2560,34 @@ def auto_transform_template(uploaded_file):
         )
 
 
-     elif template_type == "TEMPLATE_4":
-        
+    # ========================================================
+    # TEMPLATE 4
+    # 麥金酒
+    # ========================================================
+
+    elif template_type == "TEMPLATE_4":
+
         uploaded_file.seek(0)
-        
+
         result = transform_template_4(
-        uploaded_file
+            uploaded_file
         )
-    
+
         return (
             result,
             "Template 4｜麥金酒期間商品銷售統計表",
-            )
+        )
 
-    raise ValueError(
-        "無法辨識此檔案的 Template 格式"
-    )
 
-    
+    # ========================================================
+    # UNKNOWN
+    # ========================================================
+
+    else:
+
+        raise ValueError(
+            "無法辨識此檔案的 Template 格式"
+        )
    
 
 
