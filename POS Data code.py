@@ -1920,26 +1920,513 @@ def transform_template_4(uploaded_file):
 
 
 
-
-
-
-
-
-
 # ============================================================
-# Auto Detect Template Type
+# TEMPLATE 5
+# POS Standard Table with Header on Row 2
+# Example: 康尼克
+#
+# Header row:
+# Excel Row 2
+#
+# SKU:
+# 品項名稱 SKU Name
+#
+# QTY:
+# 銷量 Quantity
+#
+# Brand:
+# 品牌名稱 Brand Name
+#
+# Size:
+# 規格 Size (ml)
+#
+# Category:
+# 品類 Category
+#
+# Customer:
+# From filename
+#
+# Price:
+# Do not use source price
+# Final report uses SKU Mapping RSP
 # ============================================================
+
+def transform_template_5(uploaded_file):
+
+    # ========================================================
+    # 1. Parse Filename
+    # ========================================================
+
+    meta = parse_filename(
+        uploaded_file.name
+    )
+
+
+    # ========================================================
+    # 2. Read Raw Excel
+    # ========================================================
+
+    uploaded_file.seek(0)
+
+    raw = pd.read_excel(
+        uploaded_file,
+        sheet_name=0,
+        header=None,
+    )
+
+
+    if raw.empty:
+
+        raise ValueError(
+            "Template 5 檔案沒有資料。"
+        )
+
+
+    # ========================================================
+    # 3. Find Header Row
+    #
+    # 不 hardcode row 2
+    # 改成掃描前 10 列，比較安全
+    # ========================================================
+
+    header_row = None
+
+
+    for i in range(
+        min(
+            10,
+            len(raw),
+        )
+    ):
+
+        values = [
+            norm_text(value)
+            for value
+            in raw.iloc[i].tolist()
+        ]
+
+
+        has_sku = any(
+            (
+                "品項名稱" in value
+                and
+                "SKU Name" in value
+            )
+            or
+            value == "品項名稱"
+            for value
+            in values
+        )
+
+
+        has_qty = any(
+            (
+                "銷量" in value
+                and
+                "Quantity" in value
+            )
+            or
+            value == "銷量"
+            for value
+            in values
+        )
+
+
+        if (
+            has_sku
+            and
+            has_qty
+        ):
+
+            header_row = i
+            break
+
+
+    if header_row is None:
+
+        raise ValueError(
+            "Template 5 找不到 "
+            "「品項名稱 SKU Name / 銷量 Quantity」表頭。"
+        )
+
+
+    # ========================================================
+    # 4. Read Again Using Correct Header
+    # ========================================================
+
+    uploaded_file.seek(0)
+
+    df = pd.read_excel(
+        uploaded_file,
+        sheet_name=0,
+        header=header_row,
+    )
+
+
+    # Clean headers
+    df.columns = [
+        norm_text(column)
+        for column
+        in df.columns
+    ]
+
+
+    df = (
+        df
+        .dropna(
+            how="all"
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    # ========================================================
+    # 5. Find Required Columns
+    # ========================================================
+
+    sku_col = first_matching_column(
+        df,
+        [
+            "品項名稱 SKU Name",
+            "品項名稱",
+            "SKU Name",
+        ],
+    )
+
+
+    qty_col = first_matching_column(
+        df,
+        [
+            "銷量 Quantity",
+            "銷量",
+            "Quantity",
+        ],
+    )
+
+
+    if (
+        sku_col is None
+        or
+        qty_col is None
+    ):
+
+        raise ValueError(
+            "Template 5 找不到必要欄位。"
+            f" SKU={sku_col}, Quantity={qty_col}"
+        )
+
+
+    # ========================================================
+    # 6. Optional Columns
+    # ========================================================
+
+    brand_col = first_matching_column(
+        df,
+        [
+            "品牌名稱 Brand Name",
+            "品牌名稱",
+            "Brand Name",
+        ],
+    )
+
+
+    size_col = first_matching_column(
+        df,
+        [
+            "規格 Size (ml)",
+            "Size (ml)",
+            "規格",
+            "容量",
+        ],
+    )
+
+
+    category_col = first_matching_column(
+        df,
+        [
+            "品類 Category",
+            "Category",
+            "品類",
+        ],
+    )
+
+
+    product_code_col = first_matching_column(
+        df,
+        [
+            "品項代碼（保樂力加產品） SKU code (for PRT)",
+            "SKU code (for PRT)",
+            "品項代碼",
+            "SKU code",
+        ],
+    )
+
+
+    barcode_col = first_matching_column(
+        df,
+        [
+            "產品Barcode",
+            "Barcode",
+        ],
+    )
+
+
+    # ========================================================
+    # 7. Keep Valid SKU Rows
+    # ========================================================
+
+    valid = (
+        df[
+            sku_col
+        ]
+        .map(
+            norm_text
+        )
+        .ne("")
+    )
+
+
+    df = (
+        df.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    # ========================================================
+    # 8. Build Standard Output
+    # ========================================================
+
+    output = base_records(
+        df,
+        meta,
+        "T5_POS_HEADER_ROW_2",
+        uploaded_file.name,
+    )
+
+
+    # ========================================================
+    # 9. Correct Excel Source Row
+    #
+    # header_row is zero-based.
+    #
+    # Example:
+    # header_row = 1
+    # first data row = Excel row 3
+    # ========================================================
+
+    output[
+        "SOURCE_ROW"
+    ] = range(
+        header_row + 2,
+        header_row + 2 + len(df),
+    )
+
+
+    output[
+        "SOURCE_SHEET"
+    ] = "POS公版"
+
+
+    # ========================================================
+    # 10. Customer
+    # ========================================================
+
+    output[
+        "RAW_CUSTOMER"
+    ] = meta[
+        "FILE_RAWDATA_NAME"
+    ]
+
+
+    output[
+        "RAW_ROW_CUSTOMER"
+    ] = ""
+
+
+    # ========================================================
+    # 11. SKU
+    # ========================================================
+
+    output[
+        "RAW_SKU"
+    ] = (
+        df[
+            sku_col
+        ]
+        .map(
+            norm_text
+        )
+    )
+
+
+    # ========================================================
+    # 12. Quantity
+    # ========================================================
+
+    output[
+        "QTY"
+    ] = numeric(
+        df[
+            qty_col
+        ]
+    )
+
+
+    # ========================================================
+    # 13. Product Code
+    # ========================================================
+
+    if product_code_col is not None:
+
+        output[
+            "RAW_PRODUCT_CODE"
+        ] = (
+            df[
+                product_code_col
+            ]
+            .map(
+                norm_text
+            )
+        )
+
+    else:
+
+        output[
+            "RAW_PRODUCT_CODE"
+        ] = ""
+
+
+    # ========================================================
+    # 14. Barcode
+    # ========================================================
+
+    if barcode_col is not None:
+
+        output[
+            "RAW_BARCODE"
+        ] = (
+            df[
+                barcode_col
+            ]
+            .map(
+                norm_text
+            )
+        )
+
+    else:
+
+        output[
+            "RAW_BARCODE"
+        ] = ""
+
+
+    # ========================================================
+    # 15. Brand
+    # ========================================================
+
+    output[
+        "RAW_BRAND"
+    ] = (
+        df[
+            brand_col
+        ].map(
+            norm_text
+        )
+        if brand_col is not None
+        else ""
+    )
+
+
+    # ========================================================
+    # 16. Size
+    # ========================================================
+
+    output[
+        "RAW_SIZE"
+    ] = (
+        df[
+            size_col
+        ].map(
+            norm_text
+        )
+        if size_col is not None
+        else ""
+    )
+
+
+    # ========================================================
+    # 17. Category
+    # ========================================================
+
+    output[
+        "RAW_CATEGORY"
+    ] = (
+        df[
+            category_col
+        ].map(
+            norm_text
+        )
+        if category_col is not None
+        else ""
+    )
+
+
+    # ========================================================
+    # 18. Price
+    #
+    # Final price always comes from SKU Mapping RSP
+    # ========================================================
+
+    output[
+        "UNIT_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "TOTAL_PRICE"
+    ] = pd.NA
+
+
+    # ========================================================
+    # 19. Audit
+    # ========================================================
+
+    output[
+        "SOURCE_QTY_COLUMN"
+    ] = qty_col
+
+
+    output[
+        "SOURCE_PRICE_COLUMN"
+    ] = (
+        "RSP_FROM_SKU_MAPPING"
+    )
+
+
+    return output
+
+
+
+
+
 # ============================================================
 # Auto Detect Template Type
 #
 # Detection Priority:
 #
-# 1. Template 4 - 麥金酒
-# 2. Template 3A - 國泰 Multi-sheet
-# 3. Template 2 - Horizontal Monthly Actual Sales
-# 4. Template 3B - Single-sheet Sales Detail
-# 5. Template 1 - Standard POS
-# 6. UNKNOWN
+# 1. Template 4 - 麥金酒 Multi-page / Multi-sheet
+# 2. Template 5 - POS 公版 / 康尼克
+# 3. Template 3A - 國泰 Multi-sheet
+# 4. Template 2 - Horizontal Monthly Actual Sales
+# 5. Template 3B - Single-sheet Sales Detail
+# 6. Template 1 - Standard POS
+# 7. UNKNOWN
 # ============================================================
 
 def detect_template_type(uploaded_file):
@@ -1964,11 +2451,6 @@ def detect_template_type(uploaded_file):
                 header=0,
             )
 
-
-            # ------------------------------------------------
-            # Template 1
-            # Standard POS
-            # ------------------------------------------------
 
             sku_col = first_matching_column(
                 df,
@@ -2011,7 +2493,7 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # Excel
+    # Excel Only
     # ========================================================
 
     if suffix not in [
@@ -2021,6 +2503,10 @@ def detect_template_type(uploaded_file):
 
         return "UNKNOWN"
 
+
+    # ========================================================
+    # Load Excel Workbook
+    # ========================================================
 
     try:
 
@@ -2040,7 +2526,7 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # Read First Sheet as Raw
+    # Read First Sheet as RAW
     # ========================================================
 
     try:
@@ -2067,14 +2553,11 @@ def detect_template_type(uploaded_file):
     # 商品貨號
     # 商品名稱
     #
-    # Multi-page / Multi-sheet report
+    # Usually:
+    # Multi-sheet / Page 1 / Page 2 / ...
     # ========================================================
 
     try:
-
-        # ----------------------------------------------------
-        # Filename check
-        # ----------------------------------------------------
 
         filename_text = norm_text(
             Path(
@@ -2082,16 +2565,6 @@ def detect_template_type(uploaded_file):
             ).stem
         )
 
-
-        filename_is_maijin = (
-            "麥金酒"
-            in filename_text
-        )
-
-
-        # ----------------------------------------------------
-        # First rows text
-        # ----------------------------------------------------
 
         first_rows_text = " ".join(
             norm_text(value)
@@ -2101,6 +2574,12 @@ def detect_template_type(uploaded_file):
             ]
             .to_numpy()
             .flatten()
+        )
+
+
+        filename_is_maijin = (
+            "麥金酒"
+            in filename_text
         )
 
 
@@ -2115,10 +2594,6 @@ def detect_template_type(uploaded_file):
             in first_rows_text
         )
 
-
-        # ----------------------------------------------------
-        # Header
-        # ----------------------------------------------------
 
         has_template_4_header = False
 
@@ -2149,15 +2624,6 @@ def detect_template_type(uploaded_file):
                 break
 
 
-        # ----------------------------------------------------
-        # Detect
-        #
-        # Header 是主要條件
-        #
-        # 再搭配：
-        # filename / title
-        # ----------------------------------------------------
-
         if (
             has_template_4_header
             and
@@ -2178,12 +2644,143 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # TEMPLATE 3A
-    # 國泰 Multi-sheet Transaction Detail
+    # TEMPLATE 5
+    # POS 公版
+    # Example: 康尼克
     #
     # Characteristics:
     #
-    # Multi-sheet
+    # Header 不一定在第 1 row
+    #
+    # 品牌名稱 Brand Name
+    # 品項名稱 SKU Name
+    # 規格 Size (ml)
+    # 品類 Category
+    # 銷量 Quantity
+    # ========================================================
+
+    try:
+
+        has_template_5_header = False
+
+
+        for i in range(
+            min(
+                15,
+                len(raw),
+            )
+        ):
+
+            values = [
+                norm_text(value)
+                for value
+                in raw.iloc[
+                    i
+                ].tolist()
+            ]
+
+
+            has_sku = any(
+                (
+                    "品項名稱" in value
+                    and
+                    "SKU Name" in value
+                )
+                or
+                value == "品項名稱"
+                for value
+                in values
+            )
+
+
+            has_qty = any(
+                (
+                    "銷量" in value
+                    and
+                    "Quantity" in value
+                )
+                or
+                value == "銷量"
+                for value
+                in values
+            )
+
+
+            has_brand = any(
+                (
+                    "品牌名稱" in value
+                    and
+                    "Brand Name" in value
+                )
+                or
+                value == "品牌名稱"
+                for value
+                in values
+            )
+
+
+            has_size = any(
+                (
+                    "規格" in value
+                    and
+                    "Size" in value
+                )
+                or
+                value == "規格"
+                or
+                value == "容量"
+                for value
+                in values
+            )
+
+
+            has_category = any(
+                (
+                    "品類" in value
+                    and
+                    "Category" in value
+                )
+                or
+                value == "品類"
+                for value
+                in values
+            )
+
+
+            if (
+                has_sku
+                and
+                has_qty
+                and
+                has_brand
+                and
+                (
+                    has_size
+                    or
+                    has_category
+                )
+            ):
+
+                has_template_5_header = True
+                break
+
+
+        if has_template_5_header:
+
+            return "TEMPLATE_5"
+
+
+    except Exception:
+        pass
+
+
+    # ========================================================
+    # TEMPLATE 3A
+    # 國泰 Multi-sheet
+    #
+    # Characteristics:
+    #
+    # Multiple sheets
     # 品名規格
     # 數量2 / 數量
     # ========================================================
@@ -2213,7 +2810,8 @@ def detect_template_type(uploaded_file):
 
 
             has_product = any(
-                "品名規格" in column
+                "品名規格"
+                in column
                 for column
                 in columns
             )
@@ -2256,6 +2854,8 @@ def detect_template_type(uploaded_file):
     # 商品代號
     # 商品名稱
     # 實銷
+    #
+    # 商品 Header 與實銷不一定在完全同一列
     # ========================================================
 
     try:
@@ -2281,10 +2881,6 @@ def detect_template_type(uploaded_file):
             ]
 
 
-            # -----------------------------------------------
-            # Product Header
-            # -----------------------------------------------
-
             if (
                 "商品代號" in values
                 and
@@ -2293,13 +2889,6 @@ def detect_template_type(uploaded_file):
 
                 template_2_header_found = True
 
-
-            # -----------------------------------------------
-            # Actual Sales
-            #
-            # 實銷不一定跟商品名稱
-            # 在完全相同的一列
-            # -----------------------------------------------
 
             if any(
                 "實銷"
@@ -2388,9 +2977,9 @@ def detect_template_type(uploaded_file):
 
     # ========================================================
     # TEMPLATE 1
-    # Standard POS Excel Version
+    # Standard POS
     #
-    # Header must be row 1
+    # Header must normally be Row 1
     # ========================================================
 
     try:
@@ -2446,7 +3035,6 @@ def detect_template_type(uploaded_file):
     # ========================================================
 
     return "UNKNOWN"
-
 
 # ============================================================
 # Unified Auto Transformer
