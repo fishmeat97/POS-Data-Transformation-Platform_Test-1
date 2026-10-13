@@ -1373,6 +1373,560 @@ def transform_template_3_salesdetail(uploaded_file):
 
 
 # ============================================================
+# TEMPLATE 4
+# Multi-page Product Sales Report
+# Example: 麥金酒
+#
+# 商品貨號 -> RAW_PRODUCT_CODE
+# 商品名稱 -> RAW_SKU
+# 商品名稱右側欄位 -> QTY
+#
+# Customer:
+# 從檔名取得
+#
+# Price:
+# 不使用 Template 原始價格
+# Report 統一使用 SKU Mapping RSP
+#
+# Special:
+# 商品名稱可能因換頁 / 換行而拆成下一列
+# 系統會自動 append 回上一筆商品
+# ============================================================
+
+def transform_template_4(uploaded_file):
+
+    # ========================================================
+    # 1. Parse Filename
+    # ========================================================
+
+    meta = parse_filename(
+        uploaded_file.name
+    )
+
+
+    # ========================================================
+    # 2. Read All Sheets
+    # ========================================================
+
+    uploaded_file.seek(0)
+
+    sheets = pd.read_excel(
+        uploaded_file,
+        sheet_name=None,
+        header=None,
+    )
+
+
+    if not isinstance(
+        sheets,
+        dict,
+    ):
+        raise ValueError(
+            "Template 4 無法讀取 Excel 工作表。"
+        )
+
+
+    # ========================================================
+    # 3. Store All Product Records
+    # ========================================================
+
+    records = []
+
+    last_record_index = None
+
+
+    # ========================================================
+    # 4. Process Every Sheet
+    # ========================================================
+
+    for sheet_name, raw in sheets.items():
+
+        if (
+            raw is None
+            or raw.empty
+        ):
+            continue
+
+
+        raw = raw.copy()
+
+
+        # ====================================================
+        # 5. Find Header Row
+        #
+        # Expected:
+        # 商品貨號 | 商品名稱 | QTY
+        # ====================================================
+
+        header_row = None
+
+
+        for i in range(
+            min(
+                20,
+                len(raw),
+            )
+        ):
+
+            values = [
+                norm_text(value)
+                for value
+                in raw.iloc[i].tolist()
+            ]
+
+
+            if (
+                "商品貨號" in values
+                and
+                "商品名稱" in values
+            ):
+
+                header_row = i
+                break
+
+
+        if header_row is None:
+            continue
+
+
+        # ====================================================
+        # 6. Get Header Positions
+        # ====================================================
+
+        headers = [
+            norm_text(value)
+            for value
+            in raw.iloc[
+                header_row
+            ].tolist()
+        ]
+
+
+        product_code_idx = next(
+            (
+                i
+                for i, header
+                in enumerate(headers)
+                if header == "商品貨號"
+            ),
+            None,
+        )
+
+
+        product_name_idx = next(
+            (
+                i
+                for i, header
+                in enumerate(headers)
+                if header == "商品名稱"
+            ),
+            None,
+        )
+
+
+        if (
+            product_code_idx is None
+            or product_name_idx is None
+        ):
+            continue
+
+
+        # ====================================================
+        # 7. QTY Column
+        #
+        # 麥金酒的數量欄沒有固定 Header
+        # 數量在「商品名稱」右邊第一欄
+        # ====================================================
+
+        qty_idx = (
+            product_name_idx
+            + 1
+        )
+
+
+        if qty_idx >= raw.shape[1]:
+
+            raise ValueError(
+                f"Template 4｜{sheet_name} 找不到數量欄位。"
+            )
+
+
+        # ====================================================
+        # 8. Process Data Rows
+        # ====================================================
+
+        for row_idx in range(
+            header_row + 1,
+            len(raw),
+        ):
+
+            row = raw.iloc[
+                row_idx
+            ]
+
+
+            # ------------------------------------------------
+            # Product Code
+            # ------------------------------------------------
+
+            raw_product_code = ""
+
+            if (
+                product_code_idx
+                < len(row)
+            ):
+
+                raw_product_code = norm_text(
+                    row.iloc[
+                        product_code_idx
+                    ]
+                )
+
+
+            # ------------------------------------------------
+            # SKU Name
+            # ------------------------------------------------
+
+            raw_sku = ""
+
+            if (
+                product_name_idx
+                < len(row)
+            ):
+
+                raw_sku = norm_text(
+                    row.iloc[
+                        product_name_idx
+                    ]
+                )
+
+
+            # ------------------------------------------------
+            # Quantity
+            # ------------------------------------------------
+
+            qty_value = pd.NA
+
+            if qty_idx < len(row):
+
+                qty_value = pd.to_numeric(
+                    row.iloc[
+                        qty_idx
+                    ],
+                    errors="coerce",
+                )
+
+
+            # =================================================
+            # CASE 1
+            # Normal Product Row
+            #
+            # Example:
+            # T001 | 黑牌12年700cc | 5
+            # =================================================
+
+            if (
+                raw_sku != ""
+                and
+                pd.notna(
+                    qty_value
+                )
+            ):
+
+                records.append(
+                    {
+                        "SOURCE_FILE":
+                            uploaded_file.name,
+
+                        "SOURCE_SHEET":
+                            sheet_name,
+
+                        "SOURCE_ROW":
+                            row_idx + 1,
+
+                        "SOURCE_INNER_ROW":
+                            row_idx + 1,
+
+                        "RAW_PRODUCT_CODE":
+                            raw_product_code,
+
+                        "RAW_SKU":
+                            raw_sku,
+
+                        "QTY":
+                            qty_value,
+                    }
+                )
+
+
+                last_record_index = (
+                    len(records)
+                    - 1
+                )
+
+
+                continue
+
+
+            # =================================================
+            # CASE 2
+            # Wrapped SKU / Continuation Row
+            #
+            # Example:
+            #
+            # T020-1 | 蘇格登13年貴腐酒桶(亞 | 23
+            # 版)
+            #
+            # 下一列的「版)」會出現在第一欄
+            # =================================================
+
+            is_continuation = (
+
+                raw_product_code != ""
+
+                and
+
+                raw_sku == ""
+
+                and
+
+                pd.isna(
+                    qty_value
+                )
+            )
+
+
+            if (
+                is_continuation
+                and
+                last_record_index
+                is not None
+            ):
+
+                continuation_text = (
+                    raw_product_code
+                )
+
+
+                # 避免 footer / 無效文字
+                if continuation_text not in [
+                    "以下空白",
+                    "合計",
+                    "總計",
+                ]:
+
+                    previous_sku = (
+                        records[
+                            last_record_index
+                        ][
+                            "RAW_SKU"
+                        ]
+                    )
+
+
+                    records[
+                        last_record_index
+                    ][
+                        "RAW_SKU"
+                    ] = (
+                        previous_sku
+                        +
+                        continuation_text
+                    )
+
+
+    # ========================================================
+    # 9. Validation
+    # ========================================================
+
+    if not records:
+
+        raise ValueError(
+            "Template 4 找不到有效商品資料。"
+        )
+
+
+    # ========================================================
+    # 10. Build DataFrame
+    # ========================================================
+
+    data = pd.DataFrame(
+        records
+    )
+
+
+    # ========================================================
+    # 11. Remove Invalid Rows
+    # ========================================================
+
+    data = data[
+        data[
+            "RAW_SKU"
+        ]
+        .map(
+            norm_text
+        )
+        .ne("")
+    ].copy()
+
+
+    data = (
+        data
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    # ========================================================
+    # 12. Build Standard Output
+    # ========================================================
+
+    output = base_records(
+        data,
+        meta,
+        "T4_MAIJIN_MULTI_PAGE",
+        uploaded_file.name,
+    )
+
+
+    # ========================================================
+    # 13. Audit Fields
+    # ========================================================
+
+    output[
+        "SOURCE_SHEET"
+    ] = data[
+        "SOURCE_SHEET"
+    ].values
+
+
+    output[
+        "SOURCE_INNER_ROW"
+    ] = data[
+        "SOURCE_INNER_ROW"
+    ].values
+
+
+    output[
+        "SOURCE_ROW"
+    ] = data[
+        "SOURCE_ROW"
+    ].values
+
+
+    # ========================================================
+    # 14. Customer
+    # ========================================================
+
+    output[
+        "RAW_CUSTOMER"
+    ] = meta[
+        "FILE_RAWDATA_NAME"
+    ]
+
+
+    output[
+        "RAW_ROW_CUSTOMER"
+    ] = ""
+
+
+    # ========================================================
+    # 15. Product
+    # ========================================================
+
+    output[
+        "RAW_PRODUCT_CODE"
+    ] = data[
+        "RAW_PRODUCT_CODE"
+    ].values
+
+
+    output[
+        "RAW_SKU"
+    ] = data[
+        "RAW_SKU"
+    ].values
+
+
+    # ========================================================
+    # 16. Quantity
+    # ========================================================
+
+    output[
+        "QTY"
+    ] = pd.to_numeric(
+        data[
+            "QTY"
+        ],
+        errors="coerce",
+    ).values
+
+
+    # ========================================================
+    # 17. Price
+    #
+    # 全部後續使用 SKU Mapping RSP
+    # ========================================================
+
+    output[
+        "UNIT_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "TOTAL_PRICE"
+    ] = pd.NA
+
+
+    # ========================================================
+    # 18. Optional Raw Product Information
+    # ========================================================
+
+    output[
+        "RAW_BRAND"
+    ] = ""
+
+
+    output[
+        "RAW_SIZE"
+    ] = ""
+
+
+    output[
+        "RAW_CATEGORY"
+    ] = ""
+
+
+    # ========================================================
+    # 19. Audit
+    # ========================================================
+
+    output[
+        "SOURCE_QTY_COLUMN"
+    ] = (
+        "商品名稱右側欄位"
+    )
+
+
+    output[
+        "SOURCE_PRICE_COLUMN"
+    ] = (
+        "RSP_FROM_SKU_MAPPING"
+    )
+
+
+    return output
+
+
+
+
+
+
+
+
+
+# ============================================================
 # Auto Detect Template Type
 # ============================================================
 def detect_template_type(uploaded_file):
@@ -2360,152 +2914,7 @@ def attach_customer_mapping(
 
     return merged
 
-    # ========================================================
-    # Customer Mapping Status
-    # ========================================================
-
-    merged[
-        "CUSTOMER_MAPPING_STATUS"
-    ] = merged[
-        "Outlet No"
-    ].apply(
-        lambda x:
-        "MAPPED"
-        if norm_text(x)
-        else "UNMAPPED"
-    )
-
-
-    # ========================================================
-    # Sales ID Check
-    # ========================================================
-
-    merged[
-        "SALES_ID_CHECK"
-    ] = merged.apply(
-        lambda row:
-        (
-            "UNMAPPED"
-            if (
-                row["CUSTOMER_MAPPING_STATUS"]
-                == "UNMAPPED"
-            )
-            else (
-                "MATCH"
-                if (
-                    norm_key(
-                        row["FILE_SALES_ID"]
-                    )
-                    ==
-                    norm_key(
-                        row["Sales ID"]
-                    )
-                )
-                else "MISMATCH"
-            )
-        ),
-        axis=1,
-    )
-
-
-    # ========================================================
-    # Contract Check
-    # ========================================================
-
-    merged[
-        "CONTRACT_CHECK"
-    ] = merged.apply(
-        lambda row:
-        (
-            "UNMAPPED"
-            if (
-                row["CUSTOMER_MAPPING_STATUS"]
-                == "UNMAPPED"
-            )
-            else (
-                "MATCH"
-                if (
-                    norm_key(
-                        row["FILE_CONTRACT_JDE"]
-                    )
-                    ==
-                    norm_key(
-                        row["Contract JDE"]
-                    )
-                )
-                else "MISMATCH"
-            )
-        ),
-        axis=1,
-    )
-
-
-    # ========================================================
-    # Outlet No Check
-    # ========================================================
-
-    merged[
-        "OUTLET_CHECK"
-    ] = merged.apply(
-        lambda row:
-        (
-            "UNMAPPED"
-            if (
-                row["CUSTOMER_MAPPING_STATUS"]
-                == "UNMAPPED"
-            )
-            else (
-                "MATCH"
-                if (
-                    norm_key(
-                        row["FILE_OUTLET_NO"]
-                    )
-                    ==
-                    norm_key(
-                        row["Outlet No"]
-                    )
-                )
-                else "MISMATCH"
-            )
-        ),
-        axis=1,
-    )
-
-
-    # ========================================================
-    # Rawdata Name Check
-    # ========================================================
-
-    merged[
-        "RAWDATA_NAME_CHECK"
-    ] = merged.apply(
-        lambda row:
-        (
-            "UNMAPPED"
-            if (
-                row["CUSTOMER_MAPPING_STATUS"]
-                == "UNMAPPED"
-            )
-            else (
-                "MATCH"
-                if (
-                    norm_key(
-                        row["FILE_RAWDATA_NAME"]
-                    )
-                    ==
-                    norm_key(
-                        row["Rawdata Name"]
-                    )
-                )
-                else "MISMATCH"
-            )
-        ),
-        axis=1,
-    )
-
-
-    return merged
-
+    
 # ============================================================
 # SKU Mapping Join
 # ============================================================
