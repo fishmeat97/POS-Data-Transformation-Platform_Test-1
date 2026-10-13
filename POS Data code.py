@@ -2515,12 +2515,8 @@ def auto_transform_template(uploaded_file):
             "Template 3B｜單工作表銷貨明細",
         )
 
-    raise ValueError(
-        "無法辨識此檔案的 Template 格式"
-    )
 
-    
-    elif template_type == "TEMPLATE_4":
+     elif template_type == "TEMPLATE_4":
         
         uploaded_file.seek(0)
         
@@ -2532,6 +2528,13 @@ def auto_transform_template(uploaded_file):
             result,
             "Template 4｜麥金酒期間商品銷售統計表",
             )
+
+    raise ValueError(
+        "無法辨識此檔案的 Template 格式"
+    )
+
+    
+   
 
 
 # ============================================================
