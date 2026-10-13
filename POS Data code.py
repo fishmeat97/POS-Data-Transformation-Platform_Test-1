@@ -1929,22 +1929,46 @@ def transform_template_4(uploaded_file):
 # ============================================================
 # Auto Detect Template Type
 # ============================================================
+# ============================================================
+# Auto Detect Template Type
+#
+# Detection Priority:
+#
+# 1. Template 4 - 麥金酒
+# 2. Template 3A - 國泰 Multi-sheet
+# 3. Template 2 - Horizontal Monthly Actual Sales
+# 4. Template 3B - Single-sheet Sales Detail
+# 5. Template 1 - Standard POS
+# 6. UNKNOWN
+# ============================================================
+
 def detect_template_type(uploaded_file):
+
     suffix = Path(
         uploaded_file.name
     ).suffix.lower()
 
-    # --------------------------------------------------------
-    # CSV -> Template 1
-    # --------------------------------------------------------
+
+    # ========================================================
+    # CSV
+    # ========================================================
+
     if suffix == ".csv":
+
         try:
+
             uploaded_file.seek(0)
 
             df = read_csv_flexible(
                 uploaded_file,
                 header=0,
             )
+
+
+            # ------------------------------------------------
+            # Template 1
+            # Standard POS
+            # ------------------------------------------------
 
             sku_col = first_matching_column(
                 df,
@@ -1953,8 +1977,10 @@ def detect_template_type(uploaded_file):
                     "SKU Name",
                     "品項名稱",
                     "品名",
+                    "商品名稱",
                 ],
             )
+
 
             qty_col = first_matching_column(
                 df,
@@ -1963,61 +1989,62 @@ def detect_template_type(uploaded_file):
                     "Quantity",
                     "銷量",
                     "數量",
+                    "瓶數",
                 ],
             )
 
+
             if (
                 sku_col is not None
-                and qty_col is not None
+                and
+                qty_col is not None
             ):
+
                 return "TEMPLATE_1"
+
 
         except Exception:
             pass
 
-    # --------------------------------------------------------
+
+        return "UNKNOWN"
+
+
+    # ========================================================
     # Excel
-    # --------------------------------------------------------
-    if suffix in [
+    # ========================================================
+
+    if suffix not in [
         ".xlsx",
         ".xls",
     ]:
+
+        return "UNKNOWN"
+
+
+    try:
+
         uploaded_file.seek(0)
 
         excel_file = pd.ExcelFile(
             uploaded_file
         )
 
-        # ----------------------------------------------------
-        # Multi-sheet 國泰 style
-        # ----------------------------------------------------
-        if len(excel_file.sheet_names) > 1:
-            try:
-                uploaded_file.seek(0)
+        sheet_names = (
+            excel_file.sheet_names
+        )
 
-                first_sheet = pd.read_excel(
-                    uploaded_file,
-                    sheet_name=excel_file.sheet_names[0],
-                    header=0,
-                )
+    except Exception:
 
-                columns = {
-                    norm_col(c)
-                    for c in first_sheet.columns
-                }
+        return "UNKNOWN"
 
-                if any(
-                    "品名規格" in c
-                    for c in columns
-                ):
-                    return "TEMPLATE_3"
 
-            except Exception:
-                pass
+    # ========================================================
+    # Read First Sheet as Raw
+    # ========================================================
 
-        # ----------------------------------------------------
-        # Read first sheet as raw
-        # ----------------------------------------------------
+    try:
+
         uploaded_file.seek(0)
 
         raw = pd.read_excel(
@@ -2026,100 +2053,397 @@ def detect_template_type(uploaded_file):
             header=None,
         )
 
+    except Exception:
+
+        return "UNKNOWN"
+
+
+    # ========================================================
+    # TEMPLATE 4
+    # 麥金酒
+    #
+    # Characteristics:
+    #
+    # 商品貨號
+    # 商品名稱
+    #
+    # Multi-page / Multi-sheet report
+    # ========================================================
+
+    try:
+
         # ----------------------------------------------------
-        # Template 2
+        # Filename check
         # ----------------------------------------------------
-        for i in range(
-            min(
-                20,
-                len(raw),
-            )
-        ):
-            values = [
-                norm_text(x)
-                for x in raw.iloc[i].tolist()
+
+        filename_text = norm_text(
+            Path(
+                uploaded_file.name
+            ).stem
+        )
+
+
+        filename_is_maijin = (
+            "麥金酒"
+            in filename_text
+        )
+
+
+        # ----------------------------------------------------
+        # First rows text
+        # ----------------------------------------------------
+
+        first_rows_text = " ".join(
+            norm_text(value)
+            for value
+            in raw.iloc[
+                :20
             ]
+            .to_numpy()
+            .flatten()
+        )
 
-            if (
-                "商品代號" in values
-                and "商品名稱" in values
-                and any(
-                    "實銷" in v
-                    for v in values
-                )
-            ):
-                return "TEMPLATE_2"
+
+        has_maijin_title = (
+            "麥金酒"
+            in first_rows_text
+        )
+
+
+        has_sales_report_title = (
+            "期間商品銷售統計表"
+            in first_rows_text
+        )
+
 
         # ----------------------------------------------------
-        # Template 3 single-sheet
+        # Header
         # ----------------------------------------------------
+
+        has_template_4_header = False
+
+
         for i in range(
             min(
                 30,
                 len(raw),
             )
         ):
+
             values = [
-                norm_text(x)
-                for x in raw.iloc[i].tolist()
+                norm_text(value)
+                for value
+                in raw.iloc[
+                    i
+                ].tolist()
             ]
 
-            has_product = (
-                "貨品名稱" in values
-            )
-
-            has_qty = any(
-                "數" in v
-                and "量" in v
-                for v in values
-            )
 
             if (
-                has_product
-                and has_qty
+                "商品貨號" in values
+                and
+                "商品名稱" in values
             ):
-                return "TEMPLATE_3"
+
+                has_template_4_header = True
+                break
+
 
         # ----------------------------------------------------
-        # Template 1 Excel version
+        # Detect
+        #
+        # Header 是主要條件
+        #
+        # 再搭配：
+        # filename / title
         # ----------------------------------------------------
+
+        if (
+            has_template_4_header
+            and
+            (
+                filename_is_maijin
+                or
+                has_maijin_title
+                or
+                has_sales_report_title
+            )
+        ):
+
+            return "TEMPLATE_4"
+
+
+    except Exception:
+        pass
+
+
+    # ========================================================
+    # TEMPLATE 3A
+    # 國泰 Multi-sheet Transaction Detail
+    #
+    # Characteristics:
+    #
+    # Multi-sheet
+    # 品名規格
+    # 數量2 / 數量
+    # ========================================================
+
+    if len(
+        sheet_names
+    ) > 1:
+
         try:
+
             uploaded_file.seek(0)
 
-            df = pd.read_excel(
+            first_sheet = pd.read_excel(
                 uploaded_file,
-                sheet_name=0,
+                sheet_name=sheet_names[
+                    0
+                ],
                 header=0,
             )
 
-            sku_col = first_matching_column(
-                df,
-                [
-                    "品項名稱 SKU Name",
-                    "SKU Name",
-                    "品項名稱",
-                    "品名",
-                ],
+
+            columns = {
+                norm_col(column)
+                for column
+                in first_sheet.columns
+            }
+
+
+            has_product = any(
+                "品名規格" in column
+                for column
+                in columns
             )
 
-            qty_col = first_matching_column(
-                df,
-                [
-                    "銷量 Quantity",
-                    "Quantity",
-                    "銷量",
-                    "數量",
-                ],
+
+            has_qty = any(
+                (
+                    "數量2"
+                    in column
+                )
+                or
+                (
+                    "數量"
+                    in column
+                )
+                for column
+                in columns
             )
+
 
             if (
-                sku_col is not None
-                and qty_col is not None
+                has_product
+                and
+                has_qty
             ):
-                return "TEMPLATE_1"
+
+                return "TEMPLATE_3"
+
 
         except Exception:
             pass
+
+
+    # ========================================================
+    # TEMPLATE 2
+    # Horizontal Monthly Actual Sales
+    #
+    # Characteristics:
+    #
+    # 商品代號
+    # 商品名稱
+    # 實銷
+    # ========================================================
+
+    try:
+
+        template_2_header_found = False
+
+        actual_sales_found = False
+
+
+        for i in range(
+            min(
+                30,
+                len(raw),
+            )
+        ):
+
+            values = [
+                norm_text(value)
+                for value
+                in raw.iloc[
+                    i
+                ].tolist()
+            ]
+
+
+            # -----------------------------------------------
+            # Product Header
+            # -----------------------------------------------
+
+            if (
+                "商品代號" in values
+                and
+                "商品名稱" in values
+            ):
+
+                template_2_header_found = True
+
+
+            # -----------------------------------------------
+            # Actual Sales
+            #
+            # 實銷不一定跟商品名稱
+            # 在完全相同的一列
+            # -----------------------------------------------
+
+            if any(
+                "實銷"
+                in value
+                for value
+                in values
+            ):
+
+                actual_sales_found = True
+
+
+        if (
+            template_2_header_found
+            and
+            actual_sales_found
+        ):
+
+            return "TEMPLATE_2"
+
+
+    except Exception:
+        pass
+
+
+    # ========================================================
+    # TEMPLATE 3B
+    # Single-sheet Sales Detail
+    #
+    # Characteristics:
+    #
+    # 貨品名稱
+    # 數量
+    # ========================================================
+
+    try:
+
+        for i in range(
+            min(
+                40,
+                len(raw),
+            )
+        ):
+
+            values = [
+                norm_text(value)
+                for value
+                in raw.iloc[
+                    i
+                ].tolist()
+            ]
+
+
+            has_product = (
+                "貨品名稱"
+                in values
+            )
+
+
+            has_qty = any(
+                (
+                    "數"
+                    in value
+                )
+                and
+                (
+                    "量"
+                    in value
+                )
+                for value
+                in values
+            )
+
+
+            if (
+                has_product
+                and
+                has_qty
+            ):
+
+                return "TEMPLATE_3"
+
+
+    except Exception:
+        pass
+
+
+    # ========================================================
+    # TEMPLATE 1
+    # Standard POS Excel Version
+    #
+    # Header must be row 1
+    # ========================================================
+
+    try:
+
+        uploaded_file.seek(0)
+
+        df = pd.read_excel(
+            uploaded_file,
+            sheet_name=0,
+            header=0,
+        )
+
+
+        sku_col = first_matching_column(
+            df,
+            [
+                "品項名稱 SKU Name",
+                "SKU Name",
+                "品項名稱",
+                "品名",
+                "商品名稱",
+            ],
+        )
+
+
+        qty_col = first_matching_column(
+            df,
+            [
+                "銷量 Quantity",
+                "Quantity",
+                "銷量",
+                "數量",
+                "瓶數",
+            ],
+        )
+
+
+        if (
+            sku_col is not None
+            and
+            qty_col is not None
+        ):
+
+            return "TEMPLATE_1"
+
+
+    except Exception:
+        pass
+
+
+    # ========================================================
+    # UNKNOWN
+    # ========================================================
 
     return "UNKNOWN"
 
@@ -2194,6 +2518,19 @@ def auto_transform_template(uploaded_file):
     raise ValueError(
         "無法辨識此檔案的 Template 格式"
     )
+
+    elif template_type == "TEMPLATE_4":
+        
+        uploaded_file.seek(0)
+        
+        result = transform_template_4(
+        uploaded_file
+        )
+    
+        return (
+            result,
+            "Template 4｜麥金酒期間商品銷售統計表",
+            )
 
 
 # ============================================================
