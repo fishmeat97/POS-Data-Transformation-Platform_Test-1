@@ -2416,30 +2416,27 @@ def transform_template_5(uploaded_file):
 
 # ============================================================
 # TEMPLATE 6
-# Daily Transaction Sales Detail
+# No-header Transaction Detail
 # Example: 松賀
 #
-# File type:
-# .xls
+# Fixed column positions:
 #
-# Structure:
-# Transaction-level / daily sales detail
-#
-# SKU:
-# 自動辨識 品名 / 商品名稱 / 商品品名 / 貨品名稱
-#
-# QTY:
-# 自動辨識 數量 / 銷量 / Quantity / QTY
-#
-# Product Code / Barcode:
-# 若存在則保留
+# 0 日期
+# 1 客戶號碼
+# 2 客戶名稱
+# 3 商品號碼
+# 4 商品名稱
+# 5 單價
+# 6 數量
+# 7 小計
 #
 # Customer:
-# From filename
+# Raw row customer is available
+# Final customer mapping still uses filename metadata first
 #
 # Price:
-# 不使用 Template 原始價格做 Final Report
-# Final Report 統一使用 SKU Mapping RSP
+# Source price retained for audit only
+# Final report still uses SKU Mapping RSP
 # ============================================================
 
 def transform_template_6(uploaded_file):
@@ -2454,134 +2451,7 @@ def transform_template_6(uploaded_file):
 
 
     # ========================================================
-    # 2. Read RAW Excel
-    #
-    # Template 6 是舊版 XLS
-    # ========================================================
-
-    uploaded_file.seek(0)
-
-    raw = pd.read_excel(
-        uploaded_file,
-        sheet_name=0,
-        header=None,
-        engine="xlrd",
-    )
-
-
-    if raw.empty:
-
-        raise ValueError(
-            "Template 6 檔案沒有資料。"
-        )
-
-
-    # ========================================================
-    # 3. Find Header Row
-    #
-    # 松賀格式不要 hardcode header row
-    # 掃描前 30 列
-    # ========================================================
-
-    header_row = None
-
-
-    sku_keywords = [
-        "品名",
-        "商品名稱",
-        "商品品名",
-        "貨品名稱",
-        "品項名稱",
-        "商品",
-    ]
-
-
-    qty_keywords = [
-        "數量",
-        "銷量",
-        "Quantity",
-        "QTY",
-        "數 量",
-    ]
-
-
-    for i in range(
-        min(
-            30,
-            len(raw),
-        )
-    ):
-
-        values = [
-            norm_text(value)
-            for value
-            in raw.iloc[
-                i
-            ].tolist()
-        ]
-
-
-        # -----------------------------------------------
-        # SKU header
-        # -----------------------------------------------
-
-        has_sku = any(
-
-            any(
-                norm_key(keyword)
-                in
-                norm_key(value)
-                for keyword
-                in sku_keywords
-            )
-
-            for value
-            in values
-
-            if norm_text(value)
-        )
-
-
-        # -----------------------------------------------
-        # Quantity header
-        # -----------------------------------------------
-
-        has_qty = any(
-
-            any(
-                norm_key(keyword)
-                in
-                norm_key(value)
-                for keyword
-                in qty_keywords
-            )
-
-            for value
-            in values
-
-            if norm_text(value)
-        )
-
-
-        if (
-            has_sku
-            and
-            has_qty
-        ):
-
-            header_row = i
-            break
-
-
-    if header_row is None:
-
-        raise ValueError(
-            "Template 6 找不到商品名稱 / 數量表頭。"
-        )
-
-
-    # ========================================================
-    # 4. Read Again with Header
+    # 2. Read XLS without header
     # ========================================================
 
     uploaded_file.seek(0)
@@ -2589,165 +2459,59 @@ def transform_template_6(uploaded_file):
     df = pd.read_excel(
         uploaded_file,
         sheet_name=0,
-        header=header_row,
+        header=None,
         engine="xlrd",
     )
 
 
-    df.columns = [
-        norm_text(column)
-        for column
-        in df.columns
-    ]
-
-
     df = (
         df
-        .dropna(
-            how="all"
-        )
-        .reset_index(
-            drop=True
-        )
+        .dropna(how="all")
+        .reset_index(drop=True)
     )
 
 
-    # ========================================================
-    # 5. Find SKU
-    # ========================================================
-
-    sku_col = first_matching_column(
-        df,
-        [
-            "品名",
-            "商品名稱",
-            "商品品名",
-            "貨品名稱",
-            "品項名稱",
-            "SKU Name",
-        ],
-    )
-
-
-    # ========================================================
-    # 6. Find Quantity
-    # ========================================================
-
-    qty_col = first_matching_column(
-        df,
-        [
-            "數量",
-            "數 量",
-            "銷量",
-            "Quantity",
-            "QTY",
-        ],
-    )
-
-
-    if (
-        sku_col is None
-        or
-        qty_col is None
-    ):
+    if df.empty:
 
         raise ValueError(
-            "Template 6 找不到必要欄位。"
-            f" SKU={sku_col}, Quantity={qty_col}"
+            "Template 6 檔案沒有資料。"
         )
 
 
     # ========================================================
-    # 7. Optional Product Code / Barcode
+    # 3. Validate Column Count
     # ========================================================
 
-    product_code_col = (
-        first_matching_column(
-            df,
-            [
-                "商品代號",
-                "商品編號",
-                "貨品代號",
-                "貨品編號",
-                "品號",
-                "品項代碼",
-                "SKU Code",
-            ],
+    if df.shape[1] < 8:
+
+        raise ValueError(
+            "Template 6 欄位數不足。"
+            f" Expected >= 8, Actual={df.shape[1]}"
         )
-    )
-
-
-    barcode_col = (
-        first_matching_column(
-            df,
-            [
-                "Barcode",
-                "條碼",
-                "商品條碼",
-                "產品Barcode",
-                "EAN",
-            ],
-        )
-    )
 
 
     # ========================================================
-    # 8. Optional Transaction Date
+    # 4. Fixed Column Positions
     # ========================================================
 
-    date_col = first_matching_column(
-        df,
-        [
-            "日期",
-            "交易日期",
-            "銷售日期",
-            "Date",
-        ],
-    )
-
-
-    # ========================================================
-    # 9. Optional Source Price
-    #
-    # 只保留 audit
-    # Final report 不用
-    # ========================================================
-
-    unit_price_col = (
-        first_matching_column(
-            df,
-            [
-                "單價",
-                "售價",
-                "價格",
-                "Price",
-                "Unit Price",
-            ],
-        )
-    )
-
-
-    total_price_col = (
-        first_matching_column(
-            df,
-            [
-                "金額",
-                "總價",
-                "銷售金額",
-                "Amount",
-                "Total",
-            ],
-        )
-    )
+    DATE_COL = 0
+    CUSTOMER_NO_COL = 1
+    CUSTOMER_NAME_COL = 2
+    PRODUCT_CODE_COL = 3
+    SKU_COL = 4
+    UNIT_PRICE_COL = 5
+    QTY_COL = 6
+    TOTAL_PRICE_COL = 7
 
 
     # ========================================================
-    # 10. Clean SKU
+    # 5. Raw Fields
     # ========================================================
 
     raw_sku = (
-        df[
-            sku_col
+        df.iloc[
+            :,
+            SKU_COL
         ]
         .map(
             norm_text
@@ -2755,25 +2519,19 @@ def transform_template_6(uploaded_file):
     )
 
 
-    # ========================================================
-    # 11. Quantity
-    # ========================================================
-
     qty = numeric(
-        df[
-            qty_col
+        df.iloc[
+            :,
+            QTY_COL
         ]
     )
 
 
     # ========================================================
-    # 12. Keep Valid Product Rows
+    # 6. Keep Valid Product Rows
     #
-    # 必須：
-    # SKU 不為空
-    #
-    # 不要求 QTY 非空，
-    # 避免資料因格式問題被刪除
+    # 商品名稱不能是空白
+    # 數量允許後面再檢查
     # ========================================================
 
     valid = (
@@ -2813,26 +2571,26 @@ def transform_template_6(uploaded_file):
 
 
     # ========================================================
-    # 13. Build Standard Output
+    # 7. Build Standard Output
     # ========================================================
 
     output = base_records(
         df,
         meta,
-        "T6_DAILY_TRANSACTION",
+        "T6_NO_HEADER_TRANSACTION",
         uploaded_file.name,
     )
 
 
     # ========================================================
-    # 14. Correct Source Row
+    # 8. Source Row
     # ========================================================
 
     output[
         "SOURCE_ROW"
     ] = range(
-        header_row + 2,
-        header_row + 2 + len(df),
+        1,
+        len(df) + 1,
     )
 
 
@@ -2842,7 +2600,7 @@ def transform_template_6(uploaded_file):
 
 
     # ========================================================
-    # 15. Customer
+    # 9. Customer
     # ========================================================
 
     output[
@@ -2854,12 +2612,46 @@ def transform_template_6(uploaded_file):
 
     output[
         "RAW_ROW_CUSTOMER"
-    ] = ""
+    ] = (
+        df.iloc[
+            :,
+            CUSTOMER_NAME_COL
+        ]
+        .map(
+            norm_text
+        )
+    )
+
+
+    output[
+        "RAW_CUSTOMER_NO"
+    ] = (
+        df.iloc[
+            :,
+            CUSTOMER_NO_COL
+        ]
+        .map(
+            norm_text
+        )
+    )
 
 
     # ========================================================
-    # 16. SKU
+    # 10. Product
     # ========================================================
+
+    output[
+        "RAW_PRODUCT_CODE"
+    ] = (
+        df.iloc[
+            :,
+            PRODUCT_CODE_COL
+        ]
+        .map(
+            norm_text
+        )
+    )
+
 
     output[
         "RAW_SKU"
@@ -2867,7 +2659,7 @@ def transform_template_6(uploaded_file):
 
 
     # ========================================================
-    # 17. QTY
+    # 11. Quantity
     # ========================================================
 
     output[
@@ -2876,119 +2668,49 @@ def transform_template_6(uploaded_file):
 
 
     # ========================================================
-    # 18. Product Code
+    # 12. Transaction Date
     # ========================================================
 
-    if product_code_col is not None:
-
-        output[
-            "RAW_PRODUCT_CODE"
-        ] = (
-            df[
-                product_code_col
-            ]
-            .map(
-                norm_text
-            )
-        )
-
-    else:
-
-        output[
-            "RAW_PRODUCT_CODE"
-        ] = ""
+    output[
+        "RAW_TRANSACTION_DATE"
+    ] = (
+        df.iloc[
+            :,
+            DATE_COL
+        ]
+    )
 
 
     # ========================================================
-    # 19. Barcode
-    # ========================================================
-
-    if barcode_col is not None:
-
-        output[
-            "RAW_BARCODE"
-        ] = (
-            df[
-                barcode_col
-            ]
-            .map(
-                norm_text
-            )
-        )
-
-    else:
-
-        output[
-            "RAW_BARCODE"
-        ] = ""
-
-
-    # ========================================================
-    # 20. Transaction Date
-    # ========================================================
-
-    if date_col is not None:
-
-        output[
-            "RAW_TRANSACTION_DATE"
-        ] = (
-            df[
-                date_col
-            ]
-        )
-
-    else:
-
-        output[
-            "RAW_TRANSACTION_DATE"
-        ] = pd.NA
-
-
-    # ========================================================
-    # 21. Source Price
+    # 13. Source Price
     #
-    # 保留 audit 用
-    # Final Report 仍使用 RSP
+    # Audit only
     # ========================================================
 
-    if unit_price_col is not None:
-
-        output[
-            "RAW_UNIT_PRICE"
-        ] = numeric(
-            df[
-                unit_price_col
-            ]
-        )
-
-    else:
-
-        output[
-            "RAW_UNIT_PRICE"
-        ] = pd.NA
+    output[
+        "RAW_UNIT_PRICE"
+    ] = numeric(
+        df.iloc[
+            :,
+            UNIT_PRICE_COL
+        ]
+    )
 
 
-    if total_price_col is not None:
-
-        output[
-            "RAW_TOTAL_PRICE"
-        ] = numeric(
-            df[
-                total_price_col
-            ]
-        )
-
-    else:
-
-        output[
-            "RAW_TOTAL_PRICE"
-        ] = pd.NA
+    output[
+        "RAW_TOTAL_PRICE"
+    ] = numeric(
+        df.iloc[
+            :,
+            TOTAL_PRICE_COL
+        ]
+    )
 
 
     # ========================================================
-    # 22. Final Price Columns
+    # 14. Final Price
     #
-    # Do NOT use source price
+    # Final Report still uses SKU Mapping RSP
     # ========================================================
 
     output[
@@ -3002,7 +2724,7 @@ def transform_template_6(uploaded_file):
 
 
     # ========================================================
-    # 23. Optional Raw Mapping Fields
+    # 15. Optional Raw Mapping Fields
     # ========================================================
 
     output[
@@ -3021,12 +2743,12 @@ def transform_template_6(uploaded_file):
 
 
     # ========================================================
-    # 24. Audit
+    # 16. Audit
     # ========================================================
 
     output[
         "SOURCE_QTY_COLUMN"
-    ] = qty_col
+    ] = "Column 6｜數量"
 
 
     output[
@@ -3037,8 +2759,6 @@ def transform_template_6(uploaded_file):
 
 
     return output
-
-
 
 
 
