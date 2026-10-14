@@ -3408,112 +3408,112 @@ def detect_template_type(uploaded_file):
 # 松賀 Daily Transaction Detail
 # ========================================================
 
-try:
-
-    filename_text = norm_text(
-        Path(
-            uploaded_file.name
-        ).stem
-    )
-
-
-    filename_is_songhe = (
-        "松賀"
-        in filename_text
-    )
-
-
-    has_template_6_header = False
-
-
-    sku_keywords = [
-        "品名",
-        "商品名稱",
-        "商品品名",
-        "貨品名稱",
-        "品項名稱",
-    ]
-
-
-    qty_keywords = [
-        "數量",
-        "銷量",
-        "Quantity",
-        "QTY",
-    ]
-
-
-    for i in range(
-        min(
-            30,
-            len(raw),
+    try:
+    
+        filename_text = norm_text(
+            Path(
+                uploaded_file.name
+            ).stem
         )
-    ):
-
-        values = [
-            norm_text(value)
-            for value
-            in raw.iloc[
-                i
-            ].tolist()
+    
+    
+        filename_is_songhe = (
+            "松賀"
+            in filename_text
+        )
+    
+    
+        has_template_6_header = False
+    
+    
+        sku_keywords = [
+            "品名",
+            "商品名稱",
+            "商品品名",
+            "貨品名稱",
+            "品項名稱",
+        ]
+    
+    
+        qty_keywords = [
+            "數量",
+            "銷量",
+            "Quantity",
+            "QTY",
         ]
 
 
-        has_sku = any(
-
-            any(
-                norm_key(keyword)
-                in
-                norm_key(value)
-                for keyword
-                in sku_keywords
+        for i in range(
+            min(
+                30,
+                len(raw),
             )
-
-            for value
-            in values
-
-            if norm_text(value)
-        )
-
-
-        has_qty = any(
-
-            any(
-                norm_key(keyword)
-                in
-                norm_key(value)
-                for keyword
-                in qty_keywords
-            )
-
-            for value
-            in values
-
-            if norm_text(value)
-        )
-
-
-        if (
-            has_sku
-            and
-            has_qty
         ):
-
-            has_template_6_header = True
-            break
-
-
-    if (
-        filename_is_songhe
-        and
-        has_template_6_header
-    ):
-
-        return "TEMPLATE_6"
-
-
-except Exception:
-    pass
+    
+            values = [
+                norm_text(value)
+                for value
+                in raw.iloc[
+                    i
+                ].tolist()
+            ]
+    
+    
+            has_sku = any(
+    
+                any(
+                    norm_key(keyword)
+                    in
+                    norm_key(value)
+                    for keyword
+                    in sku_keywords
+                )
+    
+                for value
+                in values
+    
+                if norm_text(value)
+            )
+    
+    
+            has_qty = any(
+    
+                any(
+                    norm_key(keyword)
+                    in
+                    norm_key(value)
+                    for keyword
+                    in qty_keywords
+                )
+    
+                for value
+                in values
+    
+                if norm_text(value)
+            )
+    
+    
+            if (
+                has_sku
+                and
+                has_qty
+            ):
+    
+                has_template_6_header = True
+                break
+    
+    
+        if (
+            filename_is_songhe
+            and
+            has_template_6_header
+        ):
+    
+            return "TEMPLATE_6"
+    
+    
+    except Exception:
+        pass
 
 
 
