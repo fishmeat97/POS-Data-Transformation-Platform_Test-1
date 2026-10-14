@@ -3602,35 +3602,35 @@ def detect_template_type(uploaded_file):
 # 松賀 No-header Transaction Detail
 # ========================================================
 
-try:
-
-    filename_text = norm_text(
-        Path(
-            uploaded_file.name
-        ).stem
-    )
-
-
-    filename_is_songhe = (
-        "松賀"
-        in filename_text
-    )
-
-
-    has_expected_columns = (
-        raw.shape[1] >= 8
-    )
-
-
-    if (
-        filename_is_songhe
-        and
-        has_expected_columns
-    ):
-
-        return "TEMPLATE_6"
-
+    try:
     
+        filename_text = norm_text(
+            Path(
+                uploaded_file.name
+            ).stem
+        )
+    
+    
+        filename_is_songhe = (
+            "松賀"
+            in filename_text
+        )
+    
+    
+        has_expected_columns = (
+            raw.shape[1] >= 8
+        )
+    
+    
+        if (
+            filename_is_songhe
+            and
+            has_expected_columns
+        ):
+    
+            return "TEMPLATE_6"
+    
+        
     except Exception:
         pass
 
@@ -3642,69 +3642,69 @@ try:
 # 七七會社 / 懿文 Mixed Product Transaction
 # ========================================================
 
-try:
-
-    filename_text = norm_text(
-        Path(
-            uploaded_file.name
-        ).stem
-    )
-
-
-    filename_is_template_7 = (
-        "七七會社"
-        in filename_text
-        or
-        "懿文"
-        in filename_text
-    )
-
-
-    has_template_7_header = False
-
-
-    for i in range(
-        min(
-            20,
-            len(raw),
+    try:
+    
+        filename_text = norm_text(
+            Path(
+                uploaded_file.name
+            ).stem
         )
-    ):
-
-        values = [
-            norm_text(value)
-            for value
-            in raw.iloc[
-                i
-            ].tolist()
-        ]
-
-
-        if (
-            "商品名稱" in values
-            and
-            "數量" in values
-            and
-            "小計金額" in values
-            and
-            "單據單號" in values
+    
+    
+        filename_is_template_7 = (
+            "七七會社"
+            in filename_text
+            or
+            "懿文"
+            in filename_text
+        )
+    
+    
+        has_template_7_header = False
+    
+    
+        for i in range(
+            min(
+                20,
+                len(raw),
+            )
         ):
-
-            has_template_7_header = True
-            break
-
-
-    if (
-        filename_is_template_7
-        and
-        has_template_7_header
-    ):
-
-        return "TEMPLATE_7"
-
-
+    
+            values = [
+                norm_text(value)
+                for value
+                in raw.iloc[
+                    i
+                ].tolist()
+            ]
+    
+    
+            if (
+                "商品名稱" in values
+                and
+                "數量" in values
+                and
+                "小計金額" in values
+                and
+                "單據單號" in values
+            ):
+    
+                has_template_7_header = True
+                break
+    
+    
+        if (
+            filename_is_template_7
+            and
+            has_template_7_header
+        ):
+    
+            return "TEMPLATE_7"
+    
+    
     except Exception:
         pass
-    
+
 
 
 
