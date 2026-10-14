@@ -2414,6 +2414,635 @@ def transform_template_5(uploaded_file):
 
 
 
+# ============================================================
+# TEMPLATE 6
+# Daily Transaction Sales Detail
+# Example: 松賀
+#
+# File type:
+# .xls
+#
+# Structure:
+# Transaction-level / daily sales detail
+#
+# SKU:
+# 自動辨識 品名 / 商品名稱 / 商品品名 / 貨品名稱
+#
+# QTY:
+# 自動辨識 數量 / 銷量 / Quantity / QTY
+#
+# Product Code / Barcode:
+# 若存在則保留
+#
+# Customer:
+# From filename
+#
+# Price:
+# 不使用 Template 原始價格做 Final Report
+# Final Report 統一使用 SKU Mapping RSP
+# ============================================================
+
+def transform_template_6(uploaded_file):
+
+    # ========================================================
+    # 1. Parse Filename
+    # ========================================================
+
+    meta = parse_filename(
+        uploaded_file.name
+    )
+
+
+    # ========================================================
+    # 2. Read RAW Excel
+    #
+    # Template 6 是舊版 XLS
+    # ========================================================
+
+    uploaded_file.seek(0)
+
+    raw = pd.read_excel(
+        uploaded_file,
+        sheet_name=0,
+        header=None,
+        engine="xlrd",
+    )
+
+
+    if raw.empty:
+
+        raise ValueError(
+            "Template 6 檔案沒有資料。"
+        )
+
+
+    # ========================================================
+    # 3. Find Header Row
+    #
+    # 松賀格式不要 hardcode header row
+    # 掃描前 30 列
+    # ========================================================
+
+    header_row = None
+
+
+    sku_keywords = [
+        "品名",
+        "商品名稱",
+        "商品品名",
+        "貨品名稱",
+        "品項名稱",
+        "商品",
+    ]
+
+
+    qty_keywords = [
+        "數量",
+        "銷量",
+        "Quantity",
+        "QTY",
+        "數 量",
+    ]
+
+
+    for i in range(
+        min(
+            30,
+            len(raw),
+        )
+    ):
+
+        values = [
+            norm_text(value)
+            for value
+            in raw.iloc[
+                i
+            ].tolist()
+        ]
+
+
+        # -----------------------------------------------
+        # SKU header
+        # -----------------------------------------------
+
+        has_sku = any(
+
+            any(
+                norm_key(keyword)
+                in
+                norm_key(value)
+                for keyword
+                in sku_keywords
+            )
+
+            for value
+            in values
+
+            if norm_text(value)
+        )
+
+
+        # -----------------------------------------------
+        # Quantity header
+        # -----------------------------------------------
+
+        has_qty = any(
+
+            any(
+                norm_key(keyword)
+                in
+                norm_key(value)
+                for keyword
+                in qty_keywords
+            )
+
+            for value
+            in values
+
+            if norm_text(value)
+        )
+
+
+        if (
+            has_sku
+            and
+            has_qty
+        ):
+
+            header_row = i
+            break
+
+
+    if header_row is None:
+
+        raise ValueError(
+            "Template 6 找不到商品名稱 / 數量表頭。"
+        )
+
+
+    # ========================================================
+    # 4. Read Again with Header
+    # ========================================================
+
+    uploaded_file.seek(0)
+
+    df = pd.read_excel(
+        uploaded_file,
+        sheet_name=0,
+        header=header_row,
+        engine="xlrd",
+    )
+
+
+    df.columns = [
+        norm_text(column)
+        for column
+        in df.columns
+    ]
+
+
+    df = (
+        df
+        .dropna(
+            how="all"
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    # ========================================================
+    # 5. Find SKU
+    # ========================================================
+
+    sku_col = first_matching_column(
+        df,
+        [
+            "品名",
+            "商品名稱",
+            "商品品名",
+            "貨品名稱",
+            "品項名稱",
+            "SKU Name",
+        ],
+    )
+
+
+    # ========================================================
+    # 6. Find Quantity
+    # ========================================================
+
+    qty_col = first_matching_column(
+        df,
+        [
+            "數量",
+            "數 量",
+            "銷量",
+            "Quantity",
+            "QTY",
+        ],
+    )
+
+
+    if (
+        sku_col is None
+        or
+        qty_col is None
+    ):
+
+        raise ValueError(
+            "Template 6 找不到必要欄位。"
+            f" SKU={sku_col}, Quantity={qty_col}"
+        )
+
+
+    # ========================================================
+    # 7. Optional Product Code / Barcode
+    # ========================================================
+
+    product_code_col = (
+        first_matching_column(
+            df,
+            [
+                "商品代號",
+                "商品編號",
+                "貨品代號",
+                "貨品編號",
+                "品號",
+                "品項代碼",
+                "SKU Code",
+            ],
+        )
+    )
+
+
+    barcode_col = (
+        first_matching_column(
+            df,
+            [
+                "Barcode",
+                "條碼",
+                "商品條碼",
+                "產品Barcode",
+                "EAN",
+            ],
+        )
+    )
+
+
+    # ========================================================
+    # 8. Optional Transaction Date
+    # ========================================================
+
+    date_col = first_matching_column(
+        df,
+        [
+            "日期",
+            "交易日期",
+            "銷售日期",
+            "Date",
+        ],
+    )
+
+
+    # ========================================================
+    # 9. Optional Source Price
+    #
+    # 只保留 audit
+    # Final report 不用
+    # ========================================================
+
+    unit_price_col = (
+        first_matching_column(
+            df,
+            [
+                "單價",
+                "售價",
+                "價格",
+                "Price",
+                "Unit Price",
+            ],
+        )
+    )
+
+
+    total_price_col = (
+        first_matching_column(
+            df,
+            [
+                "金額",
+                "總價",
+                "銷售金額",
+                "Amount",
+                "Total",
+            ],
+        )
+    )
+
+
+    # ========================================================
+    # 10. Clean SKU
+    # ========================================================
+
+    raw_sku = (
+        df[
+            sku_col
+        ]
+        .map(
+            norm_text
+        )
+    )
+
+
+    # ========================================================
+    # 11. Quantity
+    # ========================================================
+
+    qty = numeric(
+        df[
+            qty_col
+        ]
+    )
+
+
+    # ========================================================
+    # 12. Keep Valid Product Rows
+    #
+    # 必須：
+    # SKU 不為空
+    #
+    # 不要求 QTY 非空，
+    # 避免資料因格式問題被刪除
+    # ========================================================
+
+    valid = (
+        raw_sku
+        .ne("")
+    )
+
+
+    df = (
+        df.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    raw_sku = (
+        raw_sku.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    qty = (
+        qty.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    # ========================================================
+    # 13. Build Standard Output
+    # ========================================================
+
+    output = base_records(
+        df,
+        meta,
+        "T6_DAILY_TRANSACTION",
+        uploaded_file.name,
+    )
+
+
+    # ========================================================
+    # 14. Correct Source Row
+    # ========================================================
+
+    output[
+        "SOURCE_ROW"
+    ] = range(
+        header_row + 2,
+        header_row + 2 + len(df),
+    )
+
+
+    output[
+        "SOURCE_SHEET"
+    ] = "Sheet1"
+
+
+    # ========================================================
+    # 15. Customer
+    # ========================================================
+
+    output[
+        "RAW_CUSTOMER"
+    ] = meta[
+        "FILE_RAWDATA_NAME"
+    ]
+
+
+    output[
+        "RAW_ROW_CUSTOMER"
+    ] = ""
+
+
+    # ========================================================
+    # 16. SKU
+    # ========================================================
+
+    output[
+        "RAW_SKU"
+    ] = raw_sku
+
+
+    # ========================================================
+    # 17. QTY
+    # ========================================================
+
+    output[
+        "QTY"
+    ] = qty
+
+
+    # ========================================================
+    # 18. Product Code
+    # ========================================================
+
+    if product_code_col is not None:
+
+        output[
+            "RAW_PRODUCT_CODE"
+        ] = (
+            df[
+                product_code_col
+            ]
+            .map(
+                norm_text
+            )
+        )
+
+    else:
+
+        output[
+            "RAW_PRODUCT_CODE"
+        ] = ""
+
+
+    # ========================================================
+    # 19. Barcode
+    # ========================================================
+
+    if barcode_col is not None:
+
+        output[
+            "RAW_BARCODE"
+        ] = (
+            df[
+                barcode_col
+            ]
+            .map(
+                norm_text
+            )
+        )
+
+    else:
+
+        output[
+            "RAW_BARCODE"
+        ] = ""
+
+
+    # ========================================================
+    # 20. Transaction Date
+    # ========================================================
+
+    if date_col is not None:
+
+        output[
+            "RAW_TRANSACTION_DATE"
+        ] = (
+            df[
+                date_col
+            ]
+        )
+
+    else:
+
+        output[
+            "RAW_TRANSACTION_DATE"
+        ] = pd.NA
+
+
+    # ========================================================
+    # 21. Source Price
+    #
+    # 保留 audit 用
+    # Final Report 仍使用 RSP
+    # ========================================================
+
+    if unit_price_col is not None:
+
+        output[
+            "RAW_UNIT_PRICE"
+        ] = numeric(
+            df[
+                unit_price_col
+            ]
+        )
+
+    else:
+
+        output[
+            "RAW_UNIT_PRICE"
+        ] = pd.NA
+
+
+    if total_price_col is not None:
+
+        output[
+            "RAW_TOTAL_PRICE"
+        ] = numeric(
+            df[
+                total_price_col
+            ]
+        )
+
+    else:
+
+        output[
+            "RAW_TOTAL_PRICE"
+        ] = pd.NA
+
+
+    # ========================================================
+    # 22. Final Price Columns
+    #
+    # Do NOT use source price
+    # ========================================================
+
+    output[
+        "UNIT_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "TOTAL_PRICE"
+    ] = pd.NA
+
+
+    # ========================================================
+    # 23. Optional Raw Mapping Fields
+    # ========================================================
+
+    output[
+        "RAW_BRAND"
+    ] = ""
+
+
+    output[
+        "RAW_SIZE"
+    ] = ""
+
+
+    output[
+        "RAW_CATEGORY"
+    ] = ""
+
+
+    # ========================================================
+    # 24. Audit
+    # ========================================================
+
+    output[
+        "SOURCE_QTY_COLUMN"
+    ] = qty_col
+
+
+    output[
+        "SOURCE_PRICE_COLUMN"
+    ] = (
+        "RSP_FROM_SKU_MAPPING"
+    )
+
+
+    return output
+
+
+
+
+
+
 
 # ============================================================
 # Auto Detect Template Type
@@ -2774,6 +3403,126 @@ def detect_template_type(uploaded_file):
         pass
 
 
+# ========================================================
+# TEMPLATE 6
+# 松賀 Daily Transaction Detail
+# ========================================================
+
+try:
+
+    filename_text = norm_text(
+        Path(
+            uploaded_file.name
+        ).stem
+    )
+
+
+    filename_is_songhe = (
+        "松賀"
+        in filename_text
+    )
+
+
+    has_template_6_header = False
+
+
+    sku_keywords = [
+        "品名",
+        "商品名稱",
+        "商品品名",
+        "貨品名稱",
+        "品項名稱",
+    ]
+
+
+    qty_keywords = [
+        "數量",
+        "銷量",
+        "Quantity",
+        "QTY",
+    ]
+
+
+    for i in range(
+        min(
+            30,
+            len(raw),
+        )
+    ):
+
+        values = [
+            norm_text(value)
+            for value
+            in raw.iloc[
+                i
+            ].tolist()
+        ]
+
+
+        has_sku = any(
+
+            any(
+                norm_key(keyword)
+                in
+                norm_key(value)
+                for keyword
+                in sku_keywords
+            )
+
+            for value
+            in values
+
+            if norm_text(value)
+        )
+
+
+        has_qty = any(
+
+            any(
+                norm_key(keyword)
+                in
+                norm_key(value)
+                for keyword
+                in qty_keywords
+            )
+
+            for value
+            in values
+
+            if norm_text(value)
+        )
+
+
+        if (
+            has_sku
+            and
+            has_qty
+        ):
+
+            has_template_6_header = True
+            break
+
+
+    if (
+        filename_is_songhe
+        and
+        has_template_6_header
+    ):
+
+        return "TEMPLATE_6"
+
+
+except Exception:
+    pass
+
+
+
+
+
+
+
+
+    
     # ========================================================
     # TEMPLATE 3A
     # 國泰 Multi-sheet
