@@ -2762,6 +2762,480 @@ def transform_template_6(uploaded_file):
 
 
 
+# ============================================================
+# TEMPLATE 7
+# Transaction Detail with Mixed Product Categories
+# Example: 七七會社 / 懿文
+#
+# Header:
+# 動態尋找「商品名稱 + 數量」
+#
+# SKU:
+# 商品名稱
+#
+# QTY:
+# 數量
+#
+# Source Amount:
+# 小計金額
+#
+# IMPORTANT:
+# 此 Template 同時包含：
+# - 酒類
+# - 香菸
+# - 其他商品
+#
+# 此階段先不刪除資料。
+# 酒類 Filter 在 SKU Mapping 完成後執行。
+# ============================================================
+
+def transform_template_7(uploaded_file):
+
+    # ========================================================
+    # 1. Parse Filename
+    # ========================================================
+
+    meta = parse_filename(
+        uploaded_file.name
+    )
+
+
+    # ========================================================
+    # 2. Read Raw Excel
+    # ========================================================
+
+    uploaded_file.seek(0)
+
+    raw = pd.read_excel(
+        uploaded_file,
+        sheet_name=0,
+        header=None,
+    )
+
+
+    if raw.empty:
+
+        raise ValueError(
+            "Template 7 檔案沒有資料。"
+        )
+
+
+    # ========================================================
+    # 3. Find Header Row
+    # ========================================================
+
+    header_row = None
+
+
+    for i in range(
+        min(
+            20,
+            len(raw),
+        )
+    ):
+
+        values = [
+            norm_text(value)
+            for value
+            in raw.iloc[i].tolist()
+        ]
+
+
+        if (
+            "商品名稱" in values
+            and
+            "數量" in values
+        ):
+
+            header_row = i
+            break
+
+
+    if header_row is None:
+
+        raise ValueError(
+            "Template 7 找不到「商品名稱 / 數量」表頭。"
+        )
+
+
+    # ========================================================
+    # 4. Read Again with Correct Header
+    # ========================================================
+
+    uploaded_file.seek(0)
+
+    df = pd.read_excel(
+        uploaded_file,
+        sheet_name=0,
+        header=header_row,
+    )
+
+
+    df.columns = [
+        norm_text(column)
+        for column
+        in df.columns
+    ]
+
+
+    df = (
+        df
+        .dropna(
+            how="all"
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    # ========================================================
+    # 5. Find Columns
+    # ========================================================
+
+    sku_col = first_matching_column(
+        df,
+        [
+            "商品名稱",
+        ],
+    )
+
+
+    qty_col = first_matching_column(
+        df,
+        [
+            "數量",
+        ],
+    )
+
+
+    subtotal_col = first_matching_column(
+        df,
+        [
+            "小計金額",
+        ],
+    )
+
+
+    document_col = first_matching_column(
+        df,
+        [
+            "單據單號",
+        ],
+    )
+
+
+    time_col = first_matching_column(
+        df,
+        [
+            "時間",
+        ],
+    )
+
+
+    invoice_col = first_matching_column(
+        df,
+        [
+            "發票號碼",
+        ],
+    )
+
+
+    if (
+        sku_col is None
+        or
+        qty_col is None
+    ):
+
+        raise ValueError(
+            "Template 7 找不到必要欄位。"
+            f" SKU={sku_col}, Quantity={qty_col}"
+        )
+
+
+    # ========================================================
+    # 6. Raw SKU / QTY
+    # ========================================================
+
+    raw_sku = (
+        df[
+            sku_col
+        ]
+        .map(
+            norm_text
+        )
+    )
+
+
+    qty = numeric(
+        df[
+            qty_col
+        ]
+    )
+
+
+    # ========================================================
+    # 7. Valid Product Rows
+    #
+    # 只移除沒有商品名稱的 row
+    #
+    # 不在這裡過濾酒類
+    # ========================================================
+
+    valid = (
+        raw_sku
+        .ne("")
+    )
+
+
+    df = (
+        df.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    raw_sku = (
+        raw_sku.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    qty = (
+        qty.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    # ========================================================
+    # 8. Build Standard Output
+    # ========================================================
+
+    output = base_records(
+        df,
+        meta,
+        "T7_MIXED_PRODUCT_TRANSACTION",
+        uploaded_file.name,
+    )
+
+
+    # ========================================================
+    # 9. Correct Source Row
+    # ========================================================
+
+    output[
+        "SOURCE_ROW"
+    ] = range(
+        header_row + 2,
+        header_row + 2 + len(df),
+    )
+
+
+    output[
+        "SOURCE_SHEET"
+    ] = "工作表1"
+
+
+    # ========================================================
+    # 10. Customer
+    # ========================================================
+
+    output[
+        "RAW_CUSTOMER"
+    ] = meta[
+        "FILE_RAWDATA_NAME"
+    ]
+
+
+    output[
+        "RAW_ROW_CUSTOMER"
+    ] = ""
+
+
+    # ========================================================
+    # 11. SKU
+    # ========================================================
+
+    output[
+        "RAW_SKU"
+    ] = raw_sku
+
+
+    # ========================================================
+    # 12. Quantity
+    # ========================================================
+
+    output[
+        "QTY"
+    ] = qty
+
+
+    # ========================================================
+    # 13. Document Number
+    # ========================================================
+
+    if document_col is not None:
+
+        output[
+            "RAW_DOCUMENT_NO"
+        ] = (
+            df[
+                document_col
+            ]
+            .map(
+                norm_text
+            )
+        )
+
+    else:
+
+        output[
+            "RAW_DOCUMENT_NO"
+        ] = ""
+
+
+    # ========================================================
+    # 14. Transaction Time
+    # ========================================================
+
+    if time_col is not None:
+
+        output[
+            "RAW_TRANSACTION_TIME"
+        ] = (
+            df[
+                time_col
+            ]
+        )
+
+    else:
+
+        output[
+            "RAW_TRANSACTION_TIME"
+        ] = pd.NA
+
+
+    # ========================================================
+    # 15. Invoice
+    # ========================================================
+
+    if invoice_col is not None:
+
+        output[
+            "RAW_INVOICE_NO"
+        ] = (
+            df[
+                invoice_col
+            ]
+            .map(
+                norm_text
+            )
+        )
+
+    else:
+
+        output[
+            "RAW_INVOICE_NO"
+        ] = ""
+
+
+    # ========================================================
+    # 16. Source Amount
+    #
+    # Audit only
+    # ========================================================
+
+    if subtotal_col is not None:
+
+        output[
+            "RAW_TOTAL_PRICE"
+        ] = numeric(
+            df[
+                subtotal_col
+            ]
+        )
+
+    else:
+
+        output[
+            "RAW_TOTAL_PRICE"
+        ] = pd.NA
+
+
+    # ========================================================
+    # 17. Final Price
+    #
+    # Still use SKU Mapping RSP
+    # ========================================================
+
+    output[
+        "UNIT_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "TOTAL_PRICE"
+    ] = pd.NA
+
+
+    # ========================================================
+    # 18. Product Code
+    # ========================================================
+
+    output[
+        "RAW_PRODUCT_CODE"
+    ] = ""
+
+
+    # ========================================================
+    # 19. Optional Raw Fields
+    # ========================================================
+
+    output[
+        "RAW_BRAND"
+    ] = ""
+
+
+    output[
+        "RAW_SIZE"
+    ] = ""
+
+
+    output[
+        "RAW_CATEGORY"
+    ] = ""
+
+
+    # ========================================================
+    # 20. Audit
+    # ========================================================
+
+    output[
+        "SOURCE_QTY_COLUMN"
+    ] = "數量"
+
+
+    output[
+        "SOURCE_PRICE_COLUMN"
+    ] = (
+        "RSP_FROM_SKU_MAPPING"
+    )
+
+
+    return output
+
+
 
 
 # ============================================================
@@ -3128,40 +3602,109 @@ def detect_template_type(uploaded_file):
 # 松賀 No-header Transaction Detail
 # ========================================================
 
-    try:
-    
-        filename_text = norm_text(
-            Path(
-                uploaded_file.name
-            ).stem
-        )
-    
-    
-        filename_is_songhe = (
-            "松賀"
-            in filename_text
-        )
-    
-    
-        has_expected_columns = (
-            raw.shape[1] >= 8
-        )
-    
-    
-        if (
-            filename_is_songhe
-            and
-            has_expected_columns
-        ):
-    
-            return "TEMPLATE_6"
-    
+try:
+
+    filename_text = norm_text(
+        Path(
+            uploaded_file.name
+        ).stem
+    )
+
+
+    filename_is_songhe = (
+        "松賀"
+        in filename_text
+    )
+
+
+    has_expected_columns = (
+        raw.shape[1] >= 8
+    )
+
+
+    if (
+        filename_is_songhe
+        and
+        has_expected_columns
+    ):
+
+        return "TEMPLATE_6"
+
     
     except Exception:
         pass
 
 
 
+
+# ========================================================
+# TEMPLATE 7
+# 七七會社 / 懿文 Mixed Product Transaction
+# ========================================================
+
+try:
+
+    filename_text = norm_text(
+        Path(
+            uploaded_file.name
+        ).stem
+    )
+
+
+    filename_is_template_7 = (
+        "七七會社"
+        in filename_text
+        or
+        "懿文"
+        in filename_text
+    )
+
+
+    has_template_7_header = False
+
+
+    for i in range(
+        min(
+            20,
+            len(raw),
+        )
+    ):
+
+        values = [
+            norm_text(value)
+            for value
+            in raw.iloc[
+                i
+            ].tolist()
+        ]
+
+
+        if (
+            "商品名稱" in values
+            and
+            "數量" in values
+            and
+            "小計金額" in values
+            and
+            "單據單號" in values
+        ):
+
+            has_template_7_header = True
+            break
+
+
+    if (
+        filename_is_template_7
+        and
+        has_template_7_header
+    ):
+
+        return "TEMPLATE_7"
+
+
+    except Exception:
+        pass
+    
 
 
 
@@ -3590,7 +4133,24 @@ def auto_transform_template(uploaded_file):
             "Template 6｜松賀無表頭交易明細",
         )
        
-            
+
+
+
+    
+    elif template_type == "TEMPLATE_7":
+    
+        uploaded_file.seek(0)
+    
+        result = transform_template_7(
+            uploaded_file
+        )
+    
+        return (
+            result,
+            "Template 7｜七七會社混合商品交易明細",
+        )
+    
+
 
     # ========================================================
     # UNKNOWN
