@@ -4408,17 +4408,45 @@ except Exception as e:
 
 
 # ============================================================
+# ============================================================
 # Auto Process All Templates
 # ============================================================
+
 frames = []
 upload_logs = []
 
+
 for file in template_files:
+
     meta = parse_filename(
         file.name
     )
 
+
+    # ========================================================
+    # 先單獨做 Template Detection
+    #
+    # 這樣即使後面的 transform 失敗，
+    # 我們仍然知道它原本辨識成哪個 Template
+    # ========================================================
+
     try:
+
+        file.seek(0)
+
+        detected_type_code = (
+            detect_template_type(
+                file
+            )
+        )
+
+    except Exception as detect_error:
+
+        detected_type_code = "DETECTION_ERROR"
+
+
+    try:
+
         file.seek(0)
 
         (
@@ -4428,16 +4456,22 @@ for file in template_files:
             file
         )
 
+
         frames.append(
             data
         )
 
+
         upload_logs.append({
+
             "檔案":
                 file.name,
 
             "辨識格式":
                 detected_template,
+
+            "Template Code":
+                detected_type_code,
 
             "狀態":
                 "SUCCESS",
@@ -4449,31 +4483,50 @@ for file in template_files:
                 len(data),
 
             "業務代號":
-                meta["FILE_SALES_ID"],
+                meta[
+                    "FILE_SALES_ID"
+                ],
 
             "合約編號":
-                meta["FILE_CONTRACT_JDE"],
+                meta[
+                    "FILE_CONTRACT_JDE"
+                ],
 
             "年月":
-                meta["FILE_PERIOD"],
+                meta[
+                    "FILE_PERIOD"
+                ],
 
             "店家編號":
-                meta["FILE_OUTLET_NO"],
+                meta[
+                    "FILE_OUTLET_NO"
+                ],
 
             "分店/Rawdata Name":
-                meta["FILE_RAWDATA_NAME"],
+                meta[
+                    "FILE_RAWDATA_NAME"
+                ],
 
             "檔名格式":
-                meta["FILENAME_STATUS"],
+                meta[
+                    "FILENAME_STATUS"
+                ],
         })
 
+
     except Exception as e:
+
         upload_logs.append({
+
             "檔案":
                 file.name,
 
+            # 不要再強制 UNKNOWN
             "辨識格式":
-                "UNKNOWN",
+                detected_type_code,
+
+            "Template Code":
+                detected_type_code,
 
             "狀態":
                 "FAILED",
@@ -4485,29 +4538,40 @@ for file in template_files:
                 0,
 
             "業務代號":
-                meta["FILE_SALES_ID"],
+                meta[
+                    "FILE_SALES_ID"
+                ],
 
             "合約編號":
-                meta["FILE_CONTRACT_JDE"],
+                meta[
+                    "FILE_CONTRACT_JDE"
+                ],
 
             "年月":
-                meta["FILE_PERIOD"],
+                meta[
+                    "FILE_PERIOD"
+                ],
 
             "店家編號":
-                meta["FILE_OUTLET_NO"],
+                meta[
+                    "FILE_OUTLET_NO"
+                ],
 
             "分店/Rawdata Name":
-                meta["FILE_RAWDATA_NAME"],
+                meta[
+                    "FILE_RAWDATA_NAME"
+                ],
 
             "檔名格式":
-                meta["FILENAME_STATUS"],
+                meta[
+                    "FILENAME_STATUS"
+                ],
         })
 
 
 upload_log = pd.DataFrame(
     upload_logs
 )
-
 
 # ============================================================
 # Fail Safe
