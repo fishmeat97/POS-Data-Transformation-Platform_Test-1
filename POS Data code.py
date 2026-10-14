@@ -3125,7 +3125,7 @@ def detect_template_type(uploaded_file):
 
 # ========================================================
 # TEMPLATE 6
-# 松賀 Daily Transaction Detail
+# 松賀 No-header Transaction Detail
 # ========================================================
 
     try:
@@ -3143,90 +3143,15 @@ def detect_template_type(uploaded_file):
         )
     
     
-        has_template_6_header = False
-    
-    
-        sku_keywords = [
-            "品名",
-            "商品名稱",
-            "商品品名",
-            "貨品名稱",
-            "品項名稱",
-        ]
-    
-    
-        qty_keywords = [
-            "數量",
-            "銷量",
-            "Quantity",
-            "QTY",
-        ]
-
-
-        for i in range(
-            min(
-                30,
-                len(raw),
-            )
-        ):
-    
-            values = [
-                norm_text(value)
-                for value
-                in raw.iloc[
-                    i
-                ].tolist()
-            ]
-    
-    
-            has_sku = any(
-    
-                any(
-                    norm_key(keyword)
-                    in
-                    norm_key(value)
-                    for keyword
-                    in sku_keywords
-                )
-    
-                for value
-                in values
-    
-                if norm_text(value)
-            )
-    
-    
-            has_qty = any(
-    
-                any(
-                    norm_key(keyword)
-                    in
-                    norm_key(value)
-                    for keyword
-                    in qty_keywords
-                )
-    
-                for value
-                in values
-    
-                if norm_text(value)
-            )
-    
-    
-            if (
-                has_sku
-                and
-                has_qty
-            ):
-    
-                has_template_6_header = True
-                break
+        has_expected_columns = (
+            raw.shape[1] >= 8
+        )
     
     
         if (
             filename_is_songhe
             and
-            has_template_6_header
+            has_expected_columns
         ):
     
             return "TEMPLATE_6"
@@ -3234,8 +3159,6 @@ def detect_template_type(uploaded_file):
     
     except Exception:
         pass
-
-
 
 
 
