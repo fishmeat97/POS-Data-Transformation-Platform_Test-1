@@ -3931,6 +3931,23 @@ def auto_transform_template(uploaded_file):
         )
 
 
+
+
+
+    elif template_type == "TEMPLATE_6":
+    
+        uploaded_file.seek(0)
+    
+        result = transform_template_6(
+            uploaded_file
+        )
+    
+        return (
+            result,
+            "Template 6｜松賀交易明細",
+        )
+        
+
     # ========================================================
     # UNKNOWN
     # ========================================================
