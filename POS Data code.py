@@ -3043,6 +3043,10 @@ def detect_template_type(uploaded_file):
 # Unified Auto Transformer
 # ============================================================
 
+# ============================================================
+# Unified Auto Transformer
+# ============================================================
+
 def auto_transform_template(uploaded_file):
 
     uploaded_file.seek(0)
@@ -3101,11 +3105,7 @@ def auto_transform_template(uploaded_file):
         )
 
 
-        # ----------------------------------------------------
-        # Template 3A
-        # Multi-sheet
-        # ----------------------------------------------------
-
+        # Template 3A - Multi-sheet
         if len(
             excel_file.sheet_names
         ) > 1:
@@ -3129,11 +3129,7 @@ def auto_transform_template(uploaded_file):
                 pass
 
 
-        # ----------------------------------------------------
-        # Template 3B
-        # Single-sheet
-        # ----------------------------------------------------
-
+        # Template 3B - Single-sheet
         uploaded_file.seek(0)
 
         result = (
@@ -3168,16 +3164,33 @@ def auto_transform_template(uploaded_file):
 
 
     # ========================================================
+    # TEMPLATE 5
+    # POS 公版 / 康尼克
+    # ========================================================
+
+    elif template_type == "TEMPLATE_5":
+
+        uploaded_file.seek(0)
+
+        result = transform_template_5(
+            uploaded_file
+        )
+
+        return (
+            result,
+            "Template 5｜POS 公版",
+        )
+
+
+    # ========================================================
     # UNKNOWN
     # ========================================================
 
     else:
 
         raise ValueError(
-            "無法辨識此檔案的 Template 格式"
+            f"無法辨識此檔案的 Template 格式：{template_type}"
         )
-   
-
 
 # ============================================================
 # Mapping Helpers
