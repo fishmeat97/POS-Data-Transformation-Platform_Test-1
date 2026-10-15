@@ -3236,6 +3236,663 @@ def transform_template_7(uploaded_file):
     return output
 
 
+# ============================================================
+# TEMPLATE 8
+# Multi-sheet Sales Report
+# Example: 唯君-西螺（欣州）
+#
+# Sheets:
+# Table 1
+# Table 2
+# Table 3
+# Table 4
+#
+# Structure:
+#
+# 商品條碼 -> 第一欄
+# 商品名稱 -> 中間文字欄，自動辨識
+# 數量     -> 銷貨金額前最後一個有效數字
+# 銷貨金額 -> 每列最後一個有效數字
+#
+# IMPORTANT:
+# 不同 Sheet 欄位位置不同，
+# 因此不能使用固定 column index。
+#
+# Customer:
+# From filename
+#
+# Price:
+# Source 銷貨金額只保留 Audit
+# Final Report 統一使用 SKU Mapping RSP
+# ============================================================
+
+def transform_template_8(uploaded_file):
+
+    # ========================================================
+    # 1. Parse Filename
+    # ========================================================
+
+    meta = parse_filename(
+        uploaded_file.name
+    )
+
+
+    # ========================================================
+    # 2. Read All Sheets
+    # ========================================================
+
+    uploaded_file.seek(0)
+
+    sheets = pd.read_excel(
+        uploaded_file,
+        sheet_name=None,
+        header=None,
+    )
+
+
+    if not isinstance(
+        sheets,
+        dict,
+    ):
+
+        raise ValueError(
+            "Template 8 無法讀取工作表。"
+        )
+
+
+    records = []
+
+
+    # ========================================================
+    # 3. Process Every Sheet
+    # ========================================================
+
+    for sheet_name, raw in sheets.items():
+
+        if (
+            raw is None
+            or raw.empty
+        ):
+            continue
+
+
+        raw = raw.copy()
+
+
+        # ====================================================
+        # 4. Validate Header
+        #
+        # 原始 Header 有大量空格：
+        #
+        # 商  品  條  碼
+        # 商  品  名  稱
+        # 數    量
+        # 銷 貨 金 額
+        #
+        # 所以使用 norm_key 比較
+        # ====================================================
+
+        header_values = [
+            norm_key(value)
+            for value
+            in raw.iloc[
+                0
+            ].tolist()
+        ]
+
+
+        header_text = "".join(
+            header_values
+        )
+
+
+        has_barcode_header = (
+            "商品條碼"
+            in header_text
+        )
+
+
+        has_amount_header = (
+            "銷貨金額"
+            in header_text
+        )
+
+
+        if not (
+            has_barcode_header
+            and
+            has_amount_header
+        ):
+
+            continue
+
+
+        # ====================================================
+        # 5. Process Data Rows
+        # ====================================================
+
+        for row_idx in range(
+            1,
+            len(raw),
+        ):
+
+            row = raw.iloc[
+                row_idx
+            ]
+
+
+            # -----------------------------------------------
+            # Original values
+            # -----------------------------------------------
+
+            values = row.tolist()
+
+
+            # =================================================
+            # Product Code / Barcode
+            #
+            # First column
+            # =================================================
+
+            raw_product_code = norm_text(
+                values[0]
+                if len(values) > 0
+                else ""
+            )
+
+
+            # =================================================
+            # Collect all non-empty cells
+            # =================================================
+
+            non_empty = []
+
+
+            for col_idx, value in enumerate(
+                values
+            ):
+
+                if (
+                    pd.isna(value)
+                    or
+                    norm_text(value) == ""
+                ):
+
+                    continue
+
+
+                non_empty.append(
+                    (
+                        col_idx,
+                        value,
+                    )
+                )
+
+
+            if len(non_empty) < 2:
+                continue
+
+
+            # =================================================
+            # 6. Sales Amount
+            #
+            # 銷貨金額 = 最右側有效 numeric
+            # =================================================
+
+            numeric_cells = []
+
+
+            for col_idx, value in non_empty:
+
+                numeric_value = pd.to_numeric(
+                    str(value)
+                    .replace(
+                        ",",
+                        "",
+                    )
+                    .strip(),
+                    errors="coerce",
+                )
+
+
+                if pd.notna(
+                    numeric_value
+                ):
+
+                    numeric_cells.append(
+                        (
+                            col_idx,
+                            numeric_value,
+                        )
+                    )
+
+
+            if not numeric_cells:
+                continue
+
+
+            # Right-most numeric = sales amount
+            amount_col_idx, sales_amount = (
+                numeric_cells[
+                    -1
+                ]
+            )
+
+
+            # =================================================
+            # 7. Quantity
+            #
+            # 從銷貨金額往左找
+            # 第一個 numeric
+            #
+            # Example:
+            #
+            # 瓶 | 42 | NaN | 29320
+            #
+            # Quantity = 42
+            # Amount   = 29320
+            # =================================================
+
+            qty_value = pd.NA
+            qty_col_idx = None
+
+
+            numeric_before_amount = [
+                (
+                    idx,
+                    value,
+                )
+                for idx, value
+                in numeric_cells
+                if idx < amount_col_idx
+            ]
+
+
+            if numeric_before_amount:
+
+                (
+                    qty_col_idx,
+                    qty_value,
+                ) = (
+                    numeric_before_amount[
+                        -1
+                    ]
+                )
+
+
+            if pd.isna(
+                qty_value
+            ):
+
+                continue
+
+
+            # =================================================
+            # 8. SKU Name
+            #
+            # 商品名稱位置會因 Sheet 而改變。
+            #
+            # Strategy:
+            #
+            # - 不使用第一欄 Barcode
+            # - 不使用「瓶」
+            # - 不使用純 numeric
+            # - 從剩餘文字欄位選擇最長文字
+            #
+            # 通常最長的文字就是完整商品名稱。
+            # =================================================
+
+            sku_candidates = []
+
+
+            for col_idx, value in non_empty:
+
+                # Barcode column
+                if col_idx == 0:
+                    continue
+
+
+                # 不讀 amount 右邊
+                if col_idx >= amount_col_idx:
+                    continue
+
+
+                text_value = norm_text(
+                    value
+                )
+
+
+                if text_value == "":
+                    continue
+
+
+                # Unit
+                if text_value in [
+                    "瓶",
+                    "支",
+                    "罐",
+                    "盒",
+                    "箱",
+                ]:
+                    continue
+
+
+                # Skip pure numeric
+                numeric_value = pd.to_numeric(
+                    text_value.replace(
+                        ",",
+                        "",
+                    ),
+                    errors="coerce",
+                )
+
+
+                if pd.notna(
+                    numeric_value
+                ):
+                    continue
+
+
+                sku_candidates.append(
+                    text_value
+                )
+
+
+            if not sku_candidates:
+                continue
+
+
+            # 最長文字視為 SKU
+            raw_sku = max(
+                sku_candidates,
+                key=len,
+            )
+
+
+            raw_sku = norm_text(
+                raw_sku
+            )
+
+
+            if raw_sku == "":
+                continue
+
+
+            # =================================================
+            # 9. Save Record
+            # =================================================
+
+            records.append(
+                {
+                    "SOURCE_FILE":
+                        uploaded_file.name,
+
+                    "SOURCE_SHEET":
+                        sheet_name,
+
+                    # Excel actual row
+                    "SOURCE_ROW":
+                        row_idx + 1,
+
+                    "SOURCE_INNER_ROW":
+                        row_idx + 1,
+
+                    "RAW_PRODUCT_CODE":
+                        raw_product_code,
+
+                    "RAW_SKU":
+                        raw_sku,
+
+                    "QTY":
+                        qty_value,
+
+                    "RAW_TOTAL_PRICE":
+                        sales_amount,
+
+                    "RAW_QTY_COLUMN_INDEX":
+                        qty_col_idx,
+
+                    "RAW_AMOUNT_COLUMN_INDEX":
+                        amount_col_idx,
+                }
+            )
+
+
+    # ========================================================
+    # 10. Validation
+    # ========================================================
+
+    if not records:
+
+        raise ValueError(
+            "Template 8 找不到有效商品資料。"
+        )
+
+
+    # ========================================================
+    # 11. Build DataFrame
+    # ========================================================
+
+    data = pd.DataFrame(
+        records
+    )
+
+
+    # ========================================================
+    # 12. Clean
+    # ========================================================
+
+    data = data[
+        data[
+            "RAW_SKU"
+        ]
+        .map(
+            norm_text
+        )
+        .ne("")
+    ].copy()
+
+
+    data = (
+        data
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    # ========================================================
+    # 13. Build Standard Output
+    # ========================================================
+
+    output = base_records(
+        data,
+        meta,
+        "T8_MULTI_SHEET_SALES",
+        uploaded_file.name,
+    )
+
+
+    # ========================================================
+    # 14. Source Information
+    # ========================================================
+
+    output[
+        "SOURCE_SHEET"
+    ] = data[
+        "SOURCE_SHEET"
+    ].values
+
+
+    output[
+        "SOURCE_ROW"
+    ] = data[
+        "SOURCE_ROW"
+    ].values
+
+
+    output[
+        "SOURCE_INNER_ROW"
+    ] = data[
+        "SOURCE_INNER_ROW"
+    ].values
+
+
+    # ========================================================
+    # 15. Customer
+    # ========================================================
+
+    output[
+        "RAW_CUSTOMER"
+    ] = meta[
+        "FILE_RAWDATA_NAME"
+    ]
+
+
+    output[
+        "RAW_ROW_CUSTOMER"
+    ] = ""
+
+
+    # ========================================================
+    # 16. Product Code / Barcode
+    # ========================================================
+
+    output[
+        "RAW_PRODUCT_CODE"
+    ] = data[
+        "RAW_PRODUCT_CODE"
+    ].values
+
+
+    output[
+        "RAW_BARCODE"
+    ] = data[
+        "RAW_PRODUCT_CODE"
+    ].values
+
+
+    # ========================================================
+    # 17. SKU
+    # ========================================================
+
+    output[
+        "RAW_SKU"
+    ] = data[
+        "RAW_SKU"
+    ].values
+
+
+    # ========================================================
+    # 18. Quantity
+    # ========================================================
+
+    output[
+        "QTY"
+    ] = pd.to_numeric(
+        data[
+            "QTY"
+        ],
+        errors="coerce",
+    ).values
+
+
+    # ========================================================
+    # 19. Source Amount
+    #
+    # Audit only
+    # ========================================================
+
+    output[
+        "RAW_TOTAL_PRICE"
+    ] = pd.to_numeric(
+        data[
+            "RAW_TOTAL_PRICE"
+        ],
+        errors="coerce",
+    ).values
+
+
+    # ========================================================
+    # 20. Final Price
+    #
+    # IMPORTANT:
+    #
+    # 不使用這份報表的銷貨金額計算 Final Report
+    #
+    # Final:
+    #
+    # 單價 = RSP
+    # 總價 = QTY * RSP
+    # ========================================================
+
+    output[
+        "UNIT_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "TOTAL_PRICE"
+    ] = pd.NA
+
+
+    # ========================================================
+    # 21. Optional Raw Mapping Fields
+    # ========================================================
+
+    output[
+        "RAW_BRAND"
+    ] = ""
+
+
+    output[
+        "RAW_SIZE"
+    ] = ""
+
+
+    output[
+        "RAW_CATEGORY"
+    ] = ""
+
+
+    # ========================================================
+    # 22. Audit
+    # ========================================================
+
+    output[
+        "SOURCE_QTY_COLUMN"
+    ] = (
+        "DYNAMIC_RIGHTMOST_NUMERIC_BEFORE_AMOUNT"
+    )
+
+
+    output[
+        "SOURCE_PRICE_COLUMN"
+    ] = (
+        "RSP_FROM_SKU_MAPPING"
+    )
+
+
+    output[
+        "RAW_QTY_COLUMN_INDEX"
+    ] = data[
+        "RAW_QTY_COLUMN_INDEX"
+    ].values
+
+
+    output[
+        "RAW_AMOUNT_COLUMN_INDEX"
+    ] = data[
+        "RAW_AMOUNT_COLUMN_INDEX"
+    ].values
+
+
+    return output
+
+
+
+
+
 
 
 # ============================================================
@@ -3707,6 +4364,85 @@ def detect_template_type(uploaded_file):
 
 
 
+    # ========================================================
+# TEMPLATE 8
+# 唯君 / 欣州 Multi-sheet Sales Report
+# ========================================================
+
+try:
+
+    filename_text = norm_text(
+        Path(
+            uploaded_file.name
+        ).stem
+    )
+
+
+    filename_is_template_8 = (
+        "唯君"
+        in filename_text
+        or
+        "欣州"
+        in filename_text
+    )
+
+
+    has_template_8_header = False
+
+
+    if len(
+        sheet_names
+    ) >= 1:
+
+        first_row_text = "".join(
+            norm_key(value)
+            for value
+            in raw.iloc[
+                0
+            ].tolist()
+        )
+
+
+        has_barcode = (
+            "商品條碼"
+            in first_row_text
+        )
+
+
+        has_product = (
+            "商品名稱"
+            in first_row_text
+        )
+
+
+        has_amount = (
+            "銷貨金額"
+            in first_row_text
+        )
+
+
+        if (
+            has_barcode
+            and
+            has_product
+            and
+            has_amount
+        ):
+
+            has_template_8_header = True
+
+
+    if (
+        filename_is_template_8
+        and
+        has_template_8_header
+    ):
+
+        return "TEMPLATE_8"
+
+
+except Exception:
+    pass
 
     
     # ========================================================
@@ -4151,6 +4887,20 @@ def auto_transform_template(uploaded_file):
         )
     
 
+
+    elif template_type == "TEMPLATE_8":
+    
+        uploaded_file.seek(0)
+    
+        result = transform_template_8(
+            uploaded_file
+        )
+    
+        return (
+            result,
+            "Template 8｜唯君多工作表銷售報表",
+        )
+        
 
     # ========================================================
     # UNKNOWN
