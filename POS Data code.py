@@ -4369,80 +4369,80 @@ def detect_template_type(uploaded_file):
 # 唯君 / 欣州 Multi-sheet Sales Report
 # ========================================================
 
-try:
-
-    filename_text = norm_text(
-        Path(
-            uploaded_file.name
-        ).stem
-    )
-
-
-    filename_is_template_8 = (
-        "唯君"
-        in filename_text
-        or
-        "欣州"
-        in filename_text
-    )
-
-
-    has_template_8_header = False
-
-
-    if len(
-        sheet_names
-    ) >= 1:
-
-        first_row_text = "".join(
-            norm_key(value)
-            for value
-            in raw.iloc[
-                0
-            ].tolist()
+    try:
+    
+        filename_text = norm_text(
+            Path(
+                uploaded_file.name
+            ).stem
         )
-
-
-        has_barcode = (
-            "商品條碼"
-            in first_row_text
+    
+    
+        filename_is_template_8 = (
+            "唯君"
+            in filename_text
+            or
+            "欣州"
+            in filename_text
         )
-
-
-        has_product = (
-            "商品名稱"
-            in first_row_text
-        )
-
-
-        has_amount = (
-            "銷貨金額"
-            in first_row_text
-        )
-
-
+    
+    
+        has_template_8_header = False
+    
+    
+        if len(
+            sheet_names
+        ) >= 1:
+    
+            first_row_text = "".join(
+                norm_key(value)
+                for value
+                in raw.iloc[
+                    0
+                ].tolist()
+            )
+    
+    
+            has_barcode = (
+                "商品條碼"
+                in first_row_text
+            )
+    
+    
+            has_product = (
+                "商品名稱"
+                in first_row_text
+            )
+    
+    
+            has_amount = (
+                "銷貨金額"
+                in first_row_text
+            )
+    
+    
+            if (
+                has_barcode
+                and
+                has_product
+                and
+                has_amount
+            ):
+    
+                has_template_8_header = True
+    
+    
         if (
-            has_barcode
+            filename_is_template_8
             and
-            has_product
-            and
-            has_amount
+            has_template_8_header
         ):
-
-            has_template_8_header = True
-
-
-    if (
-        filename_is_template_8
-        and
-        has_template_8_header
-    ):
-
-        return "TEMPLATE_8"
-
-
-except Exception:
-    pass
+    
+            return "TEMPLATE_8"
+    
+    
+    except Exception:
+        pass
 
     
     # ========================================================
