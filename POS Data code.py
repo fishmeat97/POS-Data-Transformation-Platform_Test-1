@@ -4576,17 +4576,34 @@ def detect_template_type(uploaded_file):
         pass
 
 
-# ========================================================
-# TEMPLATE 7
-# Simple SKU / QTY Sales Detail
-#
-# Examples:
-# 七七會社
-# 酒藏 / 艾姆度拉
-#
-# Detection:
-# 只要同一列找到 SKU 類 Header + QTY 類 Header
-# ========================================================
+    # ========================================================
+    # TEMPLATE 7
+    # Generic SKU + QTY Template
+    #
+    # Examples:
+    # 七七會社
+    # 酒藏 / 艾姆度拉
+    # 新店李系列
+    #
+    # Supported SKU headers:
+    # 商品名稱
+    # 貨品名稱
+    # 品項名稱
+    # 品名
+    # 品名規格
+    # 商品品名
+    # 產品品名
+    # 產品名稱
+    #
+    # Supported QTY headers:
+    # 數量
+    # 銷量
+    # 淨銷數量
+    # 實銷
+    # Quantity
+    # QTY
+    # 瓶數
+    # ========================================================
 
     try:
     
@@ -4596,7 +4613,7 @@ def detect_template_type(uploaded_file):
                 "SKU",
                 "QTY",
             ],
-            max_rows=20,
+            max_rows=30,
         )
     
     
@@ -4607,9 +4624,7 @@ def detect_template_type(uploaded_file):
     
     except Exception:
         pass
-
-
-    
+        
 
 
     
