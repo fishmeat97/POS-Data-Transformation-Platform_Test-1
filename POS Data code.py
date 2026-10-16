@@ -4254,72 +4254,35 @@ def detect_template_type(uploaded_file):
 
 # ========================================================
 # TEMPLATE 7
-# 七七會社 / 懿文 Mixed Product Transaction
+# Simple SKU / QTY Sales Detail
+#
+# Examples:
+# 七七會社
+# 酒藏 / 艾姆度拉
+#
+# Detection:
+# 只要同一列找到 SKU 類 Header + QTY 類 Header
 # ========================================================
 
     try:
     
-        filename_text = norm_text(
-            Path(
-                uploaded_file.name
-            ).stem
+        template_7_header_row = find_header_row(
+            raw,
+            required_fields=[
+                "SKU",
+                "QTY",
+            ],
+            max_rows=20,
         )
     
     
-        filename_is_template_7 = (
-            "七七會社"
-            in filename_text
-            or
-            "懿文"
-            in filename_text
-        )
-    
-    
-        has_template_7_header = False
-    
-    
-        for i in range(
-            min(
-                20,
-                len(raw),
-            )
-        ):
-    
-            values = [
-                norm_text(value)
-                for value
-                in raw.iloc[
-                    i
-                ].tolist()
-            ]
-    
-    
-            if (
-                "商品名稱" in values
-                and
-                "數量" in values
-                and
-                "小計金額" in values
-                and
-                "單據單號" in values
-            ):
-    
-                has_template_7_header = True
-                break
-    
-    
-        if (
-            filename_is_template_7
-            and
-            has_template_7_header
-        ):
+        if template_7_header_row is not None:
     
             return "TEMPLATE_7"
     
     
     except Exception:
         pass
-
 
 
     # ========================================================
@@ -4927,6 +4890,7 @@ STANDARD_HEADER_MAPPING = {
         "產品名稱",
         "SKU Name",
         "Product Name",
+        "產品品名",
     ],
 
 
