@@ -2847,25 +2847,73 @@ def transform_template_7(uploaded_file):
 
 
     # ========================================================
-    # 3. Find Header Row
-    # ========================================================
+  # ============================================================
+# Find Header Row by Standard Header Mapping
+# ============================================================
 
-    header_row = find_header_row(
-        raw,
-        required_fields=[
-            "SKU",
-            "QTY",
-        ],
-        max_rows=20,
-    )
+def find_header_row(
+    raw,
+    required_fields,
+    max_rows=30,
+):
 
-
-    if header_row is None:
-
-        raise ValueError(
-            "Template 7 找不到 SKU / QTY 類型表頭。"
+    for i in range(
+        min(
+            max_rows,
+            len(raw),
         )
+    ):
 
+        values = [
+            norm_text(value)
+            for value
+            in raw.iloc[i].tolist()
+        ]
+
+
+        all_found = True
+
+
+        for field_name in required_fields:
+
+            candidates = (
+                STANDARD_HEADER_MAPPING.get(
+                    field_name,
+                    [],
+                )
+            )
+
+
+            field_found = any(
+
+                any(
+                    norm_key(candidate)
+                    ==
+                    norm_key(value)
+
+                    for candidate
+                    in candidates
+                )
+
+                for value
+                in values
+
+                if norm_text(value)
+            )
+
+
+            if not field_found:
+
+                all_found = False
+                break
+
+
+        if all_found:
+
+            return i
+
+
+    return None
 
     # ========================================================
     # 4. Read Again Using Correct Header
