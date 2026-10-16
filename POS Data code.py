@@ -230,17 +230,54 @@ def clean_file_label(filename):
     return stem
 
 
+# ============================================================
+# Numeric Cleaner
+#
+# Supports:
+# 26瓶        -> 26
+# 2,408瓶     -> 2408
+# 10 箱       -> 10
+# 15支        -> 15
+# 1,250.5瓶   -> 1250.5
+# ============================================================
+
 def numeric(series):
-    if series is None:
-        return pd.Series(dtype="float64")
+
+    cleaned = (
+        series
+        .astype(str)
+
+        # Remove commas
+        .str.replace(
+            ",",
+            "",
+            regex=False,
+        )
+
+        # Remove common Chinese quantity units
+        .str.replace(
+            r"(瓶|支|罐|箱|盒|包|桶|組|入|個|PCS|PC|BOTTLE|BOTTLES)",
+            "",
+            regex=True,
+            case=False,
+        )
+
+        # Remove whitespace
+        .str.replace(
+            r"\s+",
+            "",
+            regex=True,
+        )
+
+        # Keep only number-related characters
+        .str.extract(
+            r"([-+]?\d*\.?\d+)",
+            expand=False,
+        )
+    )
 
     return pd.to_numeric(
-        series.astype(str)
-        .str.replace(",", "", regex=False)
-        .str.replace("$", "", regex=False)
-        .str.replace("NT$", "", regex=False)
-        .str.replace("NTD", "", regex=False)
-        .str.strip(),
+        cleaned,
         errors="coerce",
     )
 
@@ -469,6 +506,7 @@ def transform_template_1(uploaded_file):
             "品項名稱",
             "品名",
             "商品名稱",
+            "品名規格",
         ],
     )
 
@@ -480,6 +518,7 @@ def transform_template_1(uploaded_file):
             "銷量",
             "數量",
             "瓶數",
+            "淨銷數量",
         ],
     )
 
