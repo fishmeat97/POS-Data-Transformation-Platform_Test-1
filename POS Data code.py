@@ -2919,86 +2919,86 @@ def find_header_row(
     # 4. Read Again Using Correct Header
     # ========================================================
 
-        uploaded_file.seek(0)
-    
-        df = pd.read_excel(
-            uploaded_file,
-            sheet_name=0,
-            header=header_row,
-        )
-    
-    
-        df.columns = [
-            norm_text(column)
-            for column
-            in df.columns
-        ]
-    
-    
-        df = (
-            df
-            .dropna(how="all")
-            .reset_index(drop=True)
-        )
-    
-    
+    uploaded_file.seek(0)
+
+    df = pd.read_excel(
+        uploaded_file,
+        sheet_name=0,
+        header=header_row,
+    )
+
+
+    df.columns = [
+        norm_text(column)
+        for column
+        in df.columns
+    ]
+
+
+    df = (
+        df
+        .dropna(how="all")
+        .reset_index(drop=True)
+    )
+
+
         # ========================================================
         # 5. Find Standard Columns
         # ========================================================
     
-        sku_col = first_matching_column(
-            df,
-            STANDARD_HEADER_MAPPING["SKU"],
-        )
-    
-    
-        qty_col = first_matching_column(
-            df,
-            STANDARD_HEADER_MAPPING["QTY"],
-        )
-    
-    
-        product_code_col = first_matching_column(
-            df,
-            STANDARD_HEADER_MAPPING["PRODUCT_CODE"],
-        )
-    
-    
-        customer_col = first_matching_column(
-            df,
-            STANDARD_HEADER_MAPPING["CUSTOMER"],
-        )
-    
-    
-        unit_price_col = first_matching_column(
-            df,
-            STANDARD_HEADER_MAPPING["UNIT_PRICE"],
-        )
-    
-    
-        total_price_col = first_matching_column(
-            df,
-            STANDARD_HEADER_MAPPING["TOTAL_PRICE"],
-        )
-    
-    
-        brand_col = first_matching_column(
-            df,
-            STANDARD_HEADER_MAPPING["BRAND"],
-        )
-    
-    
-        size_col = first_matching_column(
-            df,
-            STANDARD_HEADER_MAPPING["SIZE"],
-        )
-    
-    
-        category_col = first_matching_column(
-            df,
-            STANDARD_HEADER_MAPPING["CATEGORY"],
-        )
-    
+    sku_col = first_matching_column(
+        df,
+        STANDARD_HEADER_MAPPING["SKU"],
+    )
+
+
+    qty_col = first_matching_column(
+        df,
+        STANDARD_HEADER_MAPPING["QTY"],
+    )
+
+
+    product_code_col = first_matching_column(
+        df,
+        STANDARD_HEADER_MAPPING["PRODUCT_CODE"],
+    )
+
+
+    customer_col = first_matching_column(
+        df,
+        STANDARD_HEADER_MAPPING["CUSTOMER"],
+    )
+
+
+    unit_price_col = first_matching_column(
+        df,
+        STANDARD_HEADER_MAPPING["UNIT_PRICE"],
+    )
+
+
+    total_price_col = first_matching_column(
+        df,
+        STANDARD_HEADER_MAPPING["TOTAL_PRICE"],
+    )
+
+
+    brand_col = first_matching_column(
+        df,
+        STANDARD_HEADER_MAPPING["BRAND"],
+    )
+
+
+    size_col = first_matching_column(
+        df,
+        STANDARD_HEADER_MAPPING["SIZE"],
+    )
+
+
+    category_col = first_matching_column(
+        df,
+        STANDARD_HEADER_MAPPING["CATEGORY"],
+    )
+
     
         # ========================================================
         # 6. Validate Required Columns
