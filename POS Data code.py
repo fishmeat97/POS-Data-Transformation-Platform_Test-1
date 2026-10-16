@@ -4252,37 +4252,7 @@ def detect_template_type(uploaded_file):
 
 
 
-# ========================================================
-# TEMPLATE 7
-# Simple SKU / QTY Sales Detail
-#
-# Examples:
-# 七七會社
-# 酒藏 / 艾姆度拉
-#
-# Detection:
-# 只要同一列找到 SKU 類 Header + QTY 類 Header
-# ========================================================
 
-    try:
-    
-        template_7_header_row = find_header_row(
-            raw,
-            required_fields=[
-                "SKU",
-                "QTY",
-            ],
-            max_rows=20,
-        )
-    
-    
-        if template_7_header_row is not None:
-    
-            return "TEMPLATE_7"
-    
-    
-    except Exception:
-        pass
 
 
     # ========================================================
@@ -4567,6 +4537,43 @@ def detect_template_type(uploaded_file):
         pass
 
 
+# ========================================================
+# TEMPLATE 7
+# Simple SKU / QTY Sales Detail
+#
+# Examples:
+# 七七會社
+# 酒藏 / 艾姆度拉
+#
+# Detection:
+# 只要同一列找到 SKU 類 Header + QTY 類 Header
+# ========================================================
+
+    try:
+    
+        template_7_header_row = find_header_row(
+            raw,
+            required_fields=[
+                "SKU",
+                "QTY",
+            ],
+            max_rows=20,
+        )
+    
+    
+        if template_7_header_row is not None:
+    
+            return "TEMPLATE_7"
+    
+    
+    except Exception:
+        pass
+
+
+    
+
+
+    
     # ========================================================
     # TEMPLATE 1
     # Standard POS
