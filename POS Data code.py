@@ -2828,21 +2828,21 @@ def transform_template_7(uploaded_file):
         )
 
 
-   header_row = find_header_row(
-    raw,
-    required_fields=[
-        "SKU",
-        "QTY",
-    ],
-    max_rows=20,
-)
-
-
-if header_row is None:
-
-    raise ValueError(
-        "Template 7 找不到 SKU / QTY 類型表頭。"
+       header_row = find_header_row(
+        raw,
+        required_fields=[
+            "SKU",
+            "QTY",
+        ],
+        max_rows=20,
     )
+    
+    
+    if header_row is None:
+    
+        raise ValueError(
+            "Template 7 找不到 SKU / QTY 類型表頭。"
+        )
 
     # ========================================================
     # 4. Read Again with Correct Header
