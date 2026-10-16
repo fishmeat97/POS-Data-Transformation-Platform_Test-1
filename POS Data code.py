@@ -2810,9 +2810,65 @@ def transform_template_6(uploaded_file):
 
 
 # ============================================================
-## ============================================================
+# Find Header Row by Standard Header Mapping
+# ============================================================
+
+def find_header_row(
+    raw,
+    required_fields,
+    max_rows=30,
+):
+
+    for i in range(
+        min(
+            max_rows,
+            len(raw),
+        )
+    ):
+
+        values = [
+            norm_text(value)
+            for value
+            in raw.iloc[i].tolist()
+        ]
+
+        all_found = True
+
+        for field_name in required_fields:
+
+            candidates = (
+                STANDARD_HEADER_MAPPING.get(
+                    field_name,
+                    [],
+                )
+            )
+
+            field_found = any(
+                any(
+                    norm_key(candidate)
+                    ==
+                    norm_key(value)
+                    for candidate
+                    in candidates
+                )
+                for value
+                in values
+                if norm_text(value)
+            )
+
+            if not field_found:
+                all_found = False
+                break
+
+        if all_found:
+            return i
+
+    return None
+
+
+# ============================================================
 # TEMPLATE 7
-# Transaction Detail
+# Generic SKU + QTY Transaction Detail
 # ============================================================
 
 def transform_template_7(uploaded_file):
@@ -2847,73 +2903,25 @@ def transform_template_7(uploaded_file):
 
 
     # ========================================================
-  # ============================================================
-# Find Header Row by Standard Header Mapping
-# ============================================================
+    # 3. Find Header Row
+    # ========================================================
 
-def find_header_row(
-    raw,
-    required_fields,
-    max_rows=30,
-):
+    header_row = find_header_row(
+        raw,
+        required_fields=[
+            "SKU",
+            "QTY",
+        ],
+        max_rows=30,
+    )
 
-    for i in range(
-        min(
-            max_rows,
-            len(raw),
+
+    if header_row is None:
+
+        raise ValueError(
+            "Template 7 找不到 SKU / QTY 類型表頭。"
         )
-    ):
 
-        values = [
-            norm_text(value)
-            for value
-            in raw.iloc[i].tolist()
-        ]
-
-
-        all_found = True
-
-
-        for field_name in required_fields:
-
-            candidates = (
-                STANDARD_HEADER_MAPPING.get(
-                    field_name,
-                    [],
-                )
-            )
-
-
-            field_found = any(
-
-                any(
-                    norm_key(candidate)
-                    ==
-                    norm_key(value)
-
-                    for candidate
-                    in candidates
-                )
-
-                for value
-                in values
-
-                if norm_text(value)
-            )
-
-
-            if not field_found:
-
-                all_found = False
-                break
-
-
-        if all_found:
-
-            return i
-
-
-    return None
 
     # ========================================================
     # 4. Read Again Using Correct Header
@@ -2942,10 +2950,10 @@ def find_header_row(
     )
 
 
-        # ========================================================
-        # 5. Find Standard Columns
-        # ========================================================
-    
+    # ========================================================
+    # 5. Find Standard Columns
+    # ========================================================
+
     sku_col = first_matching_column(
         df,
         STANDARD_HEADER_MAPPING["SKU"],
@@ -2999,287 +3007,285 @@ def find_header_row(
         STANDARD_HEADER_MAPPING["CATEGORY"],
     )
 
-    
-        # ========================================================
-        # 6. Validate Required Columns
-        # ========================================================
-    
-        if (
-            sku_col is None
-            or
-            qty_col is None
-        ):
-    
-            raise ValueError(
-                "Template 7 找不到必要欄位。"
-                f" SKU={sku_col}, Quantity={qty_col}"
-            )
-    
-    
-        # ========================================================
-        # 7. Prepare SKU / QTY
-        # ========================================================
-    
-        raw_sku = (
-            df[
-                sku_col
-            ]
-            .map(
-                norm_text
-            )
-        )
-    
-    
-        qty = numeric(
-            df[
-                qty_col
-            ]
-        )
-    
-    
-        # ========================================================
-        # 8. Keep Valid Product Rows
-        # ========================================================
-    
-        valid = (
-            raw_sku
-            .ne("")
-        )
-    
-    
-        df = (
-            df.loc[
-                valid
-            ]
-            .reset_index(drop=True)
-        )
-    
-    
-        raw_sku = (
-            raw_sku.loc[
-                valid
-            ]
-            .reset_index(drop=True)
-        )
-    
-    
-        qty = (
-            qty.loc[
-                valid
-            ]
-            .reset_index(drop=True)
-        )
-    
-    
-        # ========================================================
-        # 9. IMPORTANT
-        # Create output FIRST
-        # ========================================================
-    
-        output = base_records(
-            df,
-            meta,
-            "T7_TRANSACTION_DETAIL",
-            uploaded_file.name,
-        )
-    
-    
-        # ========================================================
-        # 10. Source Information
-        # ========================================================
-    
-        output[
-            "SOURCE_ROW"
-        ] = range(
-            header_row + 2,
-            header_row + 2 + len(df),
-        )
-    
-    
-        output[
-            "SOURCE_SHEET"
-        ] = "工作表1"
-    
-    
-        # ========================================================
-        # 11. Customer
-        # ========================================================
-    
-        output[
-            "RAW_CUSTOMER"
-        ] = meta[
-            "FILE_RAWDATA_NAME"
-        ]
-    
-    
-        output[
-            "RAW_ROW_CUSTOMER"
-        ] = (
-            df[
-                customer_col
-            ]
-            .map(
-                norm_text
-            )
-            if customer_col is not None
-            else ""
-        )
-    
-    
-        # ========================================================
-        # 12. SKU
-        # ========================================================
-    
-        output[
-            "RAW_SKU"
-        ] = raw_sku
-    
-    
-        # ========================================================
-        # 13. Quantity
-        # ========================================================
-    
-        output[
-            "QTY"
-        ] = qty
-    
-    
-        # ========================================================
-        # 14. Product Code
-        # ========================================================
-    
-        output[
-            "RAW_PRODUCT_CODE"
-        ] = (
-            df[
-                product_code_col
-            ]
-            .map(
-                norm_text
-            )
-            if product_code_col is not None
-            else ""
-        )
-    
-    
-        # ========================================================
-        # 15. Brand
-        # ========================================================
-    
-        output[
-            "RAW_BRAND"
-        ] = (
-            df[
-                brand_col
-            ]
-            .map(
-                norm_text
-            )
-            if brand_col is not None
-            else ""
-        )
-    
-    
-        # ========================================================
-        # 16. Size
-        # ========================================================
-    
-        output[
-            "RAW_SIZE"
-        ] = (
-            df[
-                size_col
-            ]
-            .map(
-                norm_text
-            )
-            if size_col is not None
-            else ""
-        )
-    
-    
-        # ========================================================
-        # 17. Category
-        # ========================================================
-    
-        output[
-            "RAW_CATEGORY"
-        ] = (
-            df[
-                category_col
-            ]
-            .map(
-                norm_text
-            )
-            if category_col is not None
-            else ""
-        )
-    
-    
-        # ========================================================
-        # 18. Original Price
-        # Audit only
-        # ========================================================
-    
-        output[
-            "RAW_UNIT_PRICE"
-        ] = (
-            numeric(
-                df[
-                    unit_price_col
-                ]
-            )
-            if unit_price_col is not None
-            else pd.NA
-        )
-    
-    
-        output[
-            "RAW_TOTAL_PRICE"
-        ] = (
-            numeric(
-                df[
-                    total_price_col
-                ]
-            )
-            if total_price_col is not None
-            else pd.NA
-        )
-    
-    
-        # ========================================================
-        # 19. Final Price
-        # Final Report uses SKU Mapping RSP
-        # ========================================================
-    
-        output[
-            "UNIT_PRICE"
-        ] = pd.NA
-    
-    
-        output[
-            "TOTAL_PRICE"
-        ] = pd.NA
-    
-    
-        # ========================================================
-        # 20. Audit
-        # ========================================================
-    
-        output[
-            "SOURCE_QTY_COLUMN"
-        ] = qty_col
-    
-    
-        output[
-            "SOURCE_PRICE_COLUMN"
-        ] = (
-            "RSP_FROM_SKU_MAPPING"
-        )
-    
-    
-        return output
 
+    # ========================================================
+    # 6. Validate Required Columns
+    # ========================================================
+
+    if (
+        sku_col is None
+        or
+        qty_col is None
+    ):
+
+        raise ValueError(
+            "Template 7 找不到必要欄位。"
+            f" SKU={sku_col}, Quantity={qty_col}"
+        )
+
+
+    # ========================================================
+    # 7. Prepare SKU / QTY
+    # ========================================================
+
+    raw_sku = (
+        df[
+            sku_col
+        ]
+        .map(
+            norm_text
+        )
+    )
+
+
+    qty = numeric(
+        df[
+            qty_col
+        ]
+    )
+
+
+    # ========================================================
+    # 8. Keep Valid Product Rows
+    # ========================================================
+
+    valid = (
+        raw_sku
+        .ne("")
+    )
+
+
+    df = (
+        df.loc[
+            valid
+        ]
+        .reset_index(drop=True)
+    )
+
+
+    raw_sku = (
+        raw_sku.loc[
+            valid
+        ]
+        .reset_index(drop=True)
+    )
+
+
+    qty = (
+        qty.loc[
+            valid
+        ]
+        .reset_index(drop=True)
+    )
+
+
+    # ========================================================
+    # 9. Create Output
+    # ========================================================
+
+    output = base_records(
+        df,
+        meta,
+        "T7_TRANSACTION_DETAIL",
+        uploaded_file.name,
+    )
+
+
+    # ========================================================
+    # 10. Source Information
+    # ========================================================
+
+    output[
+        "SOURCE_ROW"
+    ] = range(
+        header_row + 2,
+        header_row + 2 + len(df),
+    )
+
+
+    output[
+        "SOURCE_SHEET"
+    ] = "工作表1"
+
+
+    # ========================================================
+    # 11. Customer
+    # ========================================================
+
+    output[
+        "RAW_CUSTOMER"
+    ] = meta[
+        "FILE_RAWDATA_NAME"
+    ]
+
+
+    output[
+        "RAW_ROW_CUSTOMER"
+    ] = (
+        df[
+            customer_col
+        ]
+        .map(
+            norm_text
+        )
+        if customer_col is not None
+        else ""
+    )
+
+
+    # ========================================================
+    # 12. SKU
+    # ========================================================
+
+    output[
+        "RAW_SKU"
+    ] = raw_sku
+
+
+    # ========================================================
+    # 13. Quantity
+    # ========================================================
+
+    output[
+        "QTY"
+    ] = qty
+
+
+    # ========================================================
+    # 14. Product Code
+    # ========================================================
+
+    output[
+        "RAW_PRODUCT_CODE"
+    ] = (
+        df[
+            product_code_col
+        ]
+        .map(
+            norm_text
+        )
+        if product_code_col is not None
+        else ""
+    )
+
+
+    # ========================================================
+    # 15. Brand
+    # ========================================================
+
+    output[
+        "RAW_BRAND"
+    ] = (
+        df[
+            brand_col
+        ]
+        .map(
+            norm_text
+        )
+        if brand_col is not None
+        else ""
+    )
+
+
+    # ========================================================
+    # 16. Size
+    # ========================================================
+
+    output[
+        "RAW_SIZE"
+    ] = (
+        df[
+            size_col
+        ]
+        .map(
+            norm_text
+        )
+        if size_col is not None
+        else ""
+    )
+
+
+    # ========================================================
+    # 17. Category
+    # ========================================================
+
+    output[
+        "RAW_CATEGORY"
+    ] = (
+        df[
+            category_col
+        ]
+        .map(
+            norm_text
+        )
+        if category_col is not None
+        else ""
+    )
+
+
+    # ========================================================
+    # 18. Original Price
+    # Audit only
+    # ========================================================
+
+    output[
+        "RAW_UNIT_PRICE"
+    ] = (
+        numeric(
+            df[
+                unit_price_col
+            ]
+        )
+        if unit_price_col is not None
+        else pd.NA
+    )
+
+
+    output[
+        "RAW_TOTAL_PRICE"
+    ] = (
+        numeric(
+            df[
+                total_price_col
+            ]
+        )
+        if total_price_col is not None
+        else pd.NA
+    )
+
+
+    # ========================================================
+    # 19. Final Price
+    # Final Report uses SKU Mapping RSP
+    # ========================================================
+
+    output[
+        "UNIT_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "TOTAL_PRICE"
+    ] = pd.NA
+
+
+    # ========================================================
+    # 20. Audit
+    # ========================================================
+
+    output[
+        "SOURCE_QTY_COLUMN"
+    ] = qty_col
+
+
+    output[
+        "SOURCE_PRICE_COLUMN"
+    ] = (
+        "RSP_FROM_SKU_MAPPING"
+    )
+
+
+    return output
 
 # ============================================================
 # TEMPLATE 8
