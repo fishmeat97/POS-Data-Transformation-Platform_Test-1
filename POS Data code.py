@@ -2827,8 +2827,8 @@ def transform_template_7(uploaded_file):
             "Template 7 檔案沒有資料。"
         )
 
-
-       header_row = find_header_row(
+#3
+    header_row = find_header_row(
         raw,
         required_fields=[
             "SKU",
