@@ -400,6 +400,12 @@ def first_matching_column(df, keywords):
     return None
 
 
+
+
+
+
+
+
 # ============================================================
 # Base Output Records
 # ============================================================
@@ -1274,7 +1280,9 @@ def transform_template_3_salesdetail(uploaded_file):
 
     sku_col = first_matching_column(
         df,
-        ["貨品名稱"],
+        [
+            "貨品名稱",
+        ],
     )
 
     qty_col = first_matching_column(
@@ -2820,43 +2828,21 @@ def transform_template_7(uploaded_file):
         )
 
 
-    # ========================================================
-    # 3. Find Header Row
-    # ========================================================
-
-    header_row = None
-
-
-    for i in range(
-        min(
-            20,
-            len(raw),
-        )
-    ):
-
-        values = [
-            norm_text(value)
-            for value
-            in raw.iloc[i].tolist()
-        ]
+   header_row = find_header_row(
+    raw,
+    required_fields=[
+        "SKU",
+        "QTY",
+    ],
+    max_rows=20,
+)
 
 
-        if (
-            "商品名稱" in values
-            and
-            "數量" in values
-        ):
+if header_row is None:
 
-            header_row = i
-            break
-
-
-    if header_row is None:
-
-        raise ValueError(
-            "Template 7 找不到「商品名稱 / 數量」表頭。"
-        )
-
+    raise ValueError(
+        "Template 7 找不到 SKU / QTY 類型表頭。"
+    )
 
     # ========================================================
     # 4. Read Again with Correct Header
@@ -2893,64 +2879,80 @@ def transform_template_7(uploaded_file):
     # 5. Find Columns
     # ========================================================
 
+    # ============================================================
+# Find Standard Columns
+# ============================================================
+
     sku_col = first_matching_column(
         df,
-        [
-            "商品名稱",
+        STANDARD_HEADER_MAPPING[
+            "SKU"
         ],
     )
-
-
+    
+    
     qty_col = first_matching_column(
         df,
-        [
-            "數量",
+        STANDARD_HEADER_MAPPING[
+            "QTY"
         ],
     )
-
-
-    subtotal_col = first_matching_column(
+    
+    
+    product_code_col = first_matching_column(
         df,
-        [
-            "小計金額",
+        STANDARD_HEADER_MAPPING[
+            "PRODUCT_CODE"
         ],
     )
-
-
-    document_col = first_matching_column(
+    
+    
+    customer_col = first_matching_column(
         df,
-        [
-            "單據單號",
+        STANDARD_HEADER_MAPPING[
+            "CUSTOMER"
         ],
     )
-
-
-    time_col = first_matching_column(
+    
+    
+    unit_price_col = first_matching_column(
         df,
-        [
-            "時間",
+        STANDARD_HEADER_MAPPING[
+            "UNIT_PRICE"
         ],
     )
-
-
-    invoice_col = first_matching_column(
+    
+    
+    total_price_col = first_matching_column(
         df,
-        [
-            "發票號碼",
+        STANDARD_HEADER_MAPPING[
+            "TOTAL_PRICE"
         ],
     )
-
-
-    if (
-        sku_col is None
-        or
-        qty_col is None
-    ):
-
-        raise ValueError(
-            "Template 7 找不到必要欄位。"
-            f" SKU={sku_col}, Quantity={qty_col}"
-        )
+    
+    
+    brand_col = first_matching_column(
+        df,
+        STANDARD_HEADER_MAPPING[
+            "BRAND"
+        ],
+    )
+    
+    
+    size_col = first_matching_column(
+        df,
+        STANDARD_HEADER_MAPPING[
+            "SIZE"
+        ],
+    )
+    
+    
+    category_col = first_matching_column(
+        df,
+        STANDARD_HEADER_MAPPING[
+            "CATEGORY"
+        ],
+    )
 
 
     # ========================================================
@@ -3022,13 +3024,99 @@ def transform_template_7(uploaded_file):
     # 8. Build Standard Output
     # ========================================================
 
-    output = base_records(
-        df,
-        meta,
-        "T7_MIXED_PRODUCT_TRANSACTION",
-        uploaded_file.name,
-    )
+   # ============================================================
+# Standard Output Mapping
+# ============================================================
 
+    output[
+        "RAW_SKU"
+    ] = (
+        df[
+            sku_col
+        ]
+        .map(
+            norm_text
+        )
+    )
+    
+    
+    output[
+        "QTY"
+    ] = numeric(
+        df[
+            qty_col
+        ]
+    )
+    
+    
+    output[
+        "RAW_PRODUCT_CODE"
+    ] = (
+        df[
+            product_code_col
+        ]
+        .map(
+            norm_text
+        )
+        if product_code_col is not None
+        else ""
+    )
+    
+    
+    output[
+        "RAW_ROW_CUSTOMER"
+    ] = (
+        df[
+            customer_col
+        ]
+        .map(
+            norm_text
+        )
+        if customer_col is not None
+        else ""
+    )
+    
+    
+    output[
+        "RAW_BRAND"
+    ] = (
+        df[
+            brand_col
+        ]
+        .map(
+            norm_text
+        )
+        if brand_col is not None
+        else ""
+    )
+    
+    
+    output[
+        "RAW_SIZE"
+    ] = (
+        df[
+            size_col
+        ]
+        .map(
+            norm_text
+        )
+        if size_col is not None
+        else ""
+    )
+    
+    
+    output[
+        "RAW_CATEGORY"
+    ] = (
+        df[
+            category_col
+        ]
+        .map(
+            norm_text
+        )
+        if category_col is not None
+        else ""
+    )
 
     # ========================================================
     # 9. Correct Source Row
@@ -4945,6 +5033,233 @@ def resolve_required(
         resolved,
         missing,
     )
+
+# ============================================================
+# Standard Header Mapping
+#
+# 不同 Template 的原始欄位名稱可能不同，
+# 但最後都會統一轉成標準欄位。
+# ============================================================
+
+STANDARD_HEADER_MAPPING = {
+
+    # --------------------------------------------------------
+    # SKU / Product Name
+    # 最後統一 -> RAW_SKU -> Final Report「品項」
+    # --------------------------------------------------------
+
+    "SKU": [
+        "貨品名稱",
+        "商品名稱",
+        "品項名稱",
+        "品名",
+        "商品品名",
+        "產品名稱",
+        "SKU Name",
+        "Product Name",
+    ],
+
+
+    # --------------------------------------------------------
+    # Quantity
+    # 最後統一 -> QTY -> Final Report「銷量(瓶)」
+    # --------------------------------------------------------
+
+    "QTY": [
+        "數量",
+        "數 量",
+        "銷量",
+        "銷量 Quantity",
+        "Quantity",
+        "QTY",
+        "瓶數",
+    ],
+
+
+    # --------------------------------------------------------
+    # Product Code
+    # --------------------------------------------------------
+
+    "PRODUCT_CODE": [
+        "商品號碼",
+        "商品代號",
+        "商品編號",
+        "貨品號碼",
+        "貨品代號",
+        "貨品編號",
+        "品項代碼",
+        "SKU Code",
+        "SKU code",
+        "產品代碼",
+    ],
+
+
+    # --------------------------------------------------------
+    # Customer
+    # --------------------------------------------------------
+
+    "CUSTOMER": [
+        "客戶名稱",
+        "客戶",
+        "店家名稱",
+        "門市名稱",
+        "Customer Name",
+    ],
+
+
+    # --------------------------------------------------------
+    # Unit Price
+    # Source price only
+    # Final Report still uses RSP
+    # --------------------------------------------------------
+
+    "UNIT_PRICE": [
+        "單價",
+        "售價",
+        "價格",
+        "Unit Price",
+        "Price",
+    ],
+
+
+    # --------------------------------------------------------
+    # Total Price / Amount
+    # --------------------------------------------------------
+
+    "TOTAL_PRICE": [
+        "小計",
+        "小計金額",
+        "總價",
+        "總金額",
+        "銷貨金額",
+        "金額",
+        "Amount",
+        "Total",
+        "Total Price",
+    ],
+
+
+    # --------------------------------------------------------
+    # Brand
+    # --------------------------------------------------------
+
+    "BRAND": [
+        "品牌",
+        "品牌名稱",
+        "品牌名稱 Brand Name",
+        "Brand",
+        "Brand Name",
+    ],
+
+
+    # --------------------------------------------------------
+    # Size
+    # --------------------------------------------------------
+
+    "SIZE": [
+        "容量",
+        "規格",
+        "規格 Size (ml)",
+        "Size",
+        "Size (ml)",
+    ],
+
+
+    # --------------------------------------------------------
+    # Category
+    # --------------------------------------------------------
+
+    "CATEGORY": [
+        "品類",
+        "品類 Category",
+        "Category",
+    ],
+}
+
+
+
+# ============================================================
+# Find Header Row by Standard Mapping
+# ============================================================
+
+def find_header_row(
+    raw,
+    required_fields,
+    max_rows=30,
+):
+
+    """
+    Example:
+
+    required_fields = [
+        "SKU",
+        "QTY",
+    ]
+
+    系統會去 STANDARD_HEADER_MAPPING 裡面找可能的 header 名稱。
+
+    如果同一列同時找到 SKU + QTY，
+    就視為 header row。
+    """
+
+    for i in range(
+        min(
+            max_rows,
+            len(raw),
+        )
+    ):
+
+        values = [
+            norm_text(value)
+            for value
+            in raw.iloc[i].tolist()
+        ]
+
+
+        all_found = True
+
+
+        for field_name in required_fields:
+
+            candidates = (
+                STANDARD_HEADER_MAPPING.get(
+                    field_name,
+                    [],
+                )
+            )
+
+
+            field_found = any(
+
+                any(
+                    norm_key(candidate)
+                    ==
+                    norm_key(value)
+
+                    for candidate
+                    in candidates
+                )
+
+                for value
+                in values
+
+                if norm_text(value)
+            )
+
+
+            if not field_found:
+
+                all_found = False
+                break
+
+
+        if all_found:
+
+            return i
+
+
+    return None
+
 
 
 # ============================================================
