@@ -4662,7 +4662,7 @@ def auto_transform_template(uploaded_file):
 
         return (
             result,
-            "Template 1｜標準 POS SKU 表",
+            "Template 1｜標準 PRT_POS Template",
         )
 
 
@@ -4770,7 +4770,7 @@ def auto_transform_template(uploaded_file):
 
         return (
             result,
-            "Template 5｜POS 公版",
+            "Template 5｜POS 公版_HEADER on 2nd row",
         )
 
 
@@ -4787,7 +4787,7 @@ def auto_transform_template(uploaded_file):
     
         return (
             result,
-            "Template 6｜松賀無表頭交易明細",
+            "Template 6｜(松賀) no HEADER",
         )
        
 
@@ -4804,7 +4804,7 @@ def auto_transform_template(uploaded_file):
     
         return (
             result,
-            "Template 7｜七七會社混合商品交易明細",
+            "Template 7｜(七七會社) HEADER on 2nd row",
         )
     
 
@@ -4819,7 +4819,7 @@ def auto_transform_template(uploaded_file):
     
         return (
             result,
-            "Template 8｜唯君多工作表銷售報表",
+            "Template 8｜(唯君)",
         )
         
 
