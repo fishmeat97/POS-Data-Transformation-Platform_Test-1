@@ -3942,7 +3942,470 @@ def transform_template_8(uploaded_file):
 
 
 
+# ============================================================
+# TEMPLATE 9
+# New Store Lee / Diageo Net Sales
+# Example: 新店李系列
+#
+# Structure:
+#
+# Row 1:
+# 帝亞吉歐
+#
+# Row 2:
+# 品號 | 品名規格 | 淨銷數量
+#
+# Mapping:
+# 品號     -> RAW_PRODUCT_CODE
+# 品名規格 -> RAW_SKU
+# 淨銷數量 -> QTY
+#
+# Customer:
+# From filename
+#
+# Price:
+# Final Report uses SKU Mapping RSP
+# ============================================================
 
+def transform_template_9(uploaded_file):
+
+    # ========================================================
+    # 1. Parse Filename
+    # ========================================================
+
+    meta = parse_filename(
+        uploaded_file.name
+    )
+
+
+    # ========================================================
+    # 2. Read Raw Excel
+    # ========================================================
+
+    uploaded_file.seek(0)
+
+    raw = pd.read_excel(
+        uploaded_file,
+        sheet_name=0,
+        header=None,
+    )
+
+
+    if raw.empty:
+
+        raise ValueError(
+            "Template 9 檔案沒有資料。"
+        )
+
+
+    # ========================================================
+    # 3. Find Header Row
+    #
+    # Expected:
+    # 品號 | 品名規格 | 淨銷數量
+    #
+    # 不 hardcode row 2，
+    # 掃描前 20 rows 比較安全
+    # ========================================================
+
+    header_row = None
+
+
+    for i in range(
+        min(
+            20,
+            len(raw),
+        )
+    ):
+
+        values = [
+            norm_text(value)
+            for value
+            in raw.iloc[i].tolist()
+        ]
+
+
+        has_product_code = any(
+            norm_key(value)
+            ==
+            norm_key("品號")
+            for value
+            in values
+        )
+
+
+        has_sku = any(
+            norm_key(value)
+            ==
+            norm_key("品名規格")
+            for value
+            in values
+        )
+
+
+        has_qty = any(
+            norm_key(value)
+            ==
+            norm_key("淨銷數量")
+            for value
+            in values
+        )
+
+
+        if (
+            has_product_code
+            and
+            has_sku
+            and
+            has_qty
+        ):
+
+            header_row = i
+            break
+
+
+    if header_row is None:
+
+        raise ValueError(
+            "Template 9 找不到"
+            "「品號 / 品名規格 / 淨銷數量」表頭。"
+        )
+
+
+    # ========================================================
+    # 4. Read Again Using Correct Header
+    # ========================================================
+
+    uploaded_file.seek(0)
+
+    df = pd.read_excel(
+        uploaded_file,
+        sheet_name=0,
+        header=header_row,
+    )
+
+
+    df.columns = [
+        norm_text(column)
+        for column
+        in df.columns
+    ]
+
+
+    df = (
+        df
+        .dropna(
+            how="all"
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    # ========================================================
+    # 5. Find Columns
+    # ========================================================
+
+    product_code_col = first_matching_column(
+        df,
+        [
+            "品號",
+        ],
+    )
+
+
+    sku_col = first_matching_column(
+        df,
+        [
+            "品名規格",
+        ],
+    )
+
+
+    qty_col = first_matching_column(
+        df,
+        [
+            "淨銷數量",
+        ],
+    )
+
+
+    # ========================================================
+    # 6. Validate Required Columns
+    # ========================================================
+
+    if product_code_col is None:
+
+        raise ValueError(
+            "Template 9 找不到「品號」欄位。"
+        )
+
+
+    if sku_col is None:
+
+        raise ValueError(
+            "Template 9 找不到「品名規格」欄位。"
+        )
+
+
+    if qty_col is None:
+
+        raise ValueError(
+            "Template 9 找不到「淨銷數量」欄位。"
+        )
+
+
+    # ========================================================
+    # 7. Prepare Raw SKU
+    # ========================================================
+
+    raw_sku = (
+        df[
+            sku_col
+        ]
+        .map(
+            norm_text
+        )
+    )
+
+
+    # ========================================================
+    # 8. Prepare Quantity
+    #
+    # numeric() should support:
+    #
+    # 42
+    # 2408
+    # 2,408
+    # 26瓶
+    # 2,408瓶
+    # ========================================================
+
+    qty = numeric(
+        df[
+            qty_col
+        ]
+    )
+
+
+    # ========================================================
+    # 9. Keep Valid Product Rows
+    #
+    # SKU 有值就保留
+    # 不因 QTY 暫時轉換失敗而直接刪掉
+    # ========================================================
+
+    valid = (
+        raw_sku
+        .ne("")
+    )
+
+
+    df = (
+        df.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    raw_sku = (
+        raw_sku.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    qty = (
+        qty.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    # ========================================================
+    # 10. Build Standard Output
+    # ========================================================
+
+    output = base_records(
+        df,
+        meta,
+        "T9_DIAGEO_NET_SALES",
+        uploaded_file.name,
+    )
+
+
+    # ========================================================
+    # 11. Source Information
+    # ========================================================
+
+    output[
+        "SOURCE_ROW"
+    ] = range(
+        header_row + 2,
+        header_row + 2 + len(df),
+    )
+
+
+    output[
+        "SOURCE_SHEET"
+    ] = "工作表1"
+
+
+    # ========================================================
+    # 12. Customer
+    #
+    # From filename:
+    #
+    # 2172_31032115_202609_31032115_新店李系列.xlsx
+    #
+    # RAW_CUSTOMER = 新店李系列
+    # ========================================================
+
+    output[
+        "RAW_CUSTOMER"
+    ] = meta[
+        "FILE_RAWDATA_NAME"
+    ]
+
+
+    output[
+        "RAW_ROW_CUSTOMER"
+    ] = ""
+
+
+    # ========================================================
+    # 13. Product Code
+    # ========================================================
+
+    output[
+        "RAW_PRODUCT_CODE"
+    ] = (
+        df[
+            product_code_col
+        ]
+        .map(
+            norm_text
+        )
+    )
+
+
+    # ========================================================
+    # 14. SKU
+    # ========================================================
+
+    output[
+        "RAW_SKU"
+    ] = raw_sku
+
+
+    # ========================================================
+    # 15. Quantity
+    # ========================================================
+
+    output[
+        "QTY"
+    ] = qty
+
+
+    # ========================================================
+    # 16. Source Quantity
+    #
+    # Audit 用：
+    # 保留原本 Excel 的值
+    # ========================================================
+
+    output[
+        "RAW_QTY"
+    ] = (
+        df[
+            qty_col
+        ]
+        .astype(str)
+    )
+
+
+    # ========================================================
+    # 17. Price
+    #
+    # Template 9 沒有價格欄
+    #
+    # Final Report:
+    #
+    # 單價 = RSP
+    # 總價 = QTY * RSP
+    # 建議售價 = RSP
+    # ========================================================
+
+    output[
+        "UNIT_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "TOTAL_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "RAW_UNIT_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "RAW_TOTAL_PRICE"
+    ] = pd.NA
+
+
+    # ========================================================
+    # 18. Optional Raw Fields
+    # ========================================================
+
+    output[
+        "RAW_BRAND"
+    ] = ""
+
+
+    output[
+        "RAW_SIZE"
+    ] = ""
+
+
+    output[
+        "RAW_CATEGORY"
+    ] = ""
+
+
+    # ========================================================
+    # 19. Audit
+    # ========================================================
+
+    output[
+        "SOURCE_QTY_COLUMN"
+    ] = qty_col
+
+
+    output[
+        "SOURCE_PRICE_COLUMN"
+    ] = (
+        "RSP_FROM_SKU_MAPPING"
+    )
+
+
+    # ========================================================
+    # 20. Return
+    # ========================================================
+
+    return output
 
 
 
@@ -4630,6 +5093,83 @@ def detect_template_type(uploaded_file):
         pass
 
 
+# ========================================================
+# TEMPLATE 9
+# 新店李系列 / Diageo Net Sales
+#
+# Expected structure:
+#
+# 品號 | 品名規格 | 淨銷數量
+# ========================================================
+
+    try:
+    
+        template_9_header_found = False
+    
+    
+        for i in range(
+            min(
+                20,
+                len(raw),
+            )
+        ):
+    
+            values = [
+                norm_text(value)
+                for value
+                in raw.iloc[i].tolist()
+            ]
+    
+    
+            normalized_values = [
+                norm_key(value)
+                for value
+                in values
+                if norm_text(value)
+            ]
+    
+    
+            has_product_code = (
+                norm_key("品號")
+                in normalized_values
+            )
+    
+    
+            has_sku = (
+                norm_key("品名規格")
+                in normalized_values
+            )
+    
+    
+            has_qty = (
+                norm_key("淨銷數量")
+                in normalized_values
+            )
+    
+    
+            if (
+                has_product_code
+                and
+                has_sku
+                and
+                has_qty
+            ):
+    
+                template_9_header_found = True
+                break
+    
+    
+        if template_9_header_found:
+    
+            return "TEMPLATE_9"
+    
+    
+    except Exception:
+        pass
+
+
+    
+
     # ========================================================
     # TEMPLATE 7
     # Generic SKU + QTY Template
@@ -4938,6 +5478,20 @@ def auto_transform_template(uploaded_file):
         )
         
 
+    elif template_type == "TEMPLATE_9":
+    
+        uploaded_file.seek(0)
+    
+        result = transform_template_9(
+            uploaded_file
+        )
+    
+        return (
+            result,
+            "Template 9｜新店李淨銷報表",
+        )
+
+    
     # ========================================================
     # UNKNOWN
     # ========================================================
