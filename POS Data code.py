@@ -4410,6 +4410,357 @@ def transform_template_9(uploaded_file):
 
 
 # ============================================================
+# TEMPLATE 10
+# No Header - Fixed Two Columns
+#
+# Example:
+# 名酒集系列
+#
+# Column 1 -> 商品 / SKU
+# Column 2 -> 數量 / QTY
+#
+# NO HEADER
+#
+# Customer:
+# From filename
+#
+# Price:
+# Final Report uses SKU Mapping RSP
+# ============================================================
+
+def transform_template_10(uploaded_file):
+
+    # ========================================================
+    # 1. Parse Filename
+    # ========================================================
+
+    meta = parse_filename(
+        uploaded_file.name
+    )
+
+
+    # ========================================================
+    # 2. Read File
+    # ========================================================
+
+    uploaded_file.seek(0)
+
+    suffix = Path(
+        uploaded_file.name
+    ).suffix.lower()
+
+
+    if suffix == ".xls":
+
+        df = pd.read_excel(
+            uploaded_file,
+            sheet_name=0,
+            header=None,
+            engine="xlrd",
+        )
+
+    else:
+
+        df = pd.read_excel(
+            uploaded_file,
+            sheet_name=0,
+            header=None,
+        )
+
+
+    # ========================================================
+    # 3. Remove Empty Rows / Columns
+    # ========================================================
+
+    df = (
+        df
+        .dropna(
+            how="all"
+        )
+        .dropna(
+            axis=1,
+            how="all",
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    if df.empty:
+
+        raise ValueError(
+            "Template 10 檔案沒有資料。"
+        )
+
+
+    # ========================================================
+    # 4. Validate Column Count
+    # ========================================================
+
+    if df.shape[1] < 2:
+
+        raise ValueError(
+            "Template 10 欄位不足。"
+            f" Expected >= 2, Actual={df.shape[1]}"
+        )
+
+
+    # ========================================================
+    # 5. Fixed Column Positions
+    #
+    # Python index:
+    #
+    # Column 1 -> 0
+    # Column 2 -> 1
+    # ========================================================
+
+    SKU_COL = 0
+    QTY_COL = 1
+
+
+    # ========================================================
+    # 6. SKU
+    # ========================================================
+
+    raw_sku = (
+        df.iloc[
+            :,
+            SKU_COL
+        ]
+        .map(
+            norm_text
+        )
+    )
+
+
+    # ========================================================
+    # 7. Quantity
+    #
+    # numeric() 可處理：
+    #
+    # 12
+    # 1,200
+    # 12瓶
+    # 1,200瓶
+    # ========================================================
+
+    qty = numeric(
+        df.iloc[
+            :,
+            QTY_COL
+        ]
+    )
+
+
+    # ========================================================
+    # 8. Keep Valid Rows
+    #
+    # 商品名稱有值才保留
+    #
+    # 同時排除很明顯不是商品資料的 row
+    # ========================================================
+
+    valid = (
+        raw_sku
+        .ne("")
+    )
+
+
+    df = (
+        df.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    raw_sku = (
+        raw_sku.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    qty = (
+        qty.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    # ========================================================
+    # 9. Build Standard Output
+    # ========================================================
+
+    output = base_records(
+        df,
+        meta,
+        "T10_NO_HEADER_SKU_QTY",
+        uploaded_file.name,
+    )
+
+
+    # ========================================================
+    # 10. Source Info
+    # ========================================================
+
+    output[
+        "SOURCE_ROW"
+    ] = range(
+        1,
+        len(df) + 1,
+    )
+
+
+    output[
+        "SOURCE_SHEET"
+    ] = "Sheet1"
+
+
+    # ========================================================
+    # 11. Customer
+    # ========================================================
+
+    output[
+        "RAW_CUSTOMER"
+    ] = meta[
+        "FILE_RAWDATA_NAME"
+    ]
+
+
+    output[
+        "RAW_ROW_CUSTOMER"
+    ] = ""
+
+
+    # ========================================================
+    # 12. SKU
+    # ========================================================
+
+    output[
+        "RAW_SKU"
+    ] = raw_sku
+
+
+    # ========================================================
+    # 13. Quantity
+    # ========================================================
+
+    output[
+        "QTY"
+    ] = qty
+
+
+    # ========================================================
+    # 14. Keep Original Quantity for Audit
+    # ========================================================
+
+    output[
+        "RAW_QTY"
+    ] = (
+        df.iloc[
+            :,
+            QTY_COL
+        ]
+        .astype(str)
+    )
+
+
+    # ========================================================
+    # 15. Product Code
+    #
+    # Template 10 沒有 Product Code
+    # ========================================================
+
+    output[
+        "RAW_PRODUCT_CODE"
+    ] = ""
+
+
+    # ========================================================
+    # 16. Price
+    #
+    # Final Report:
+    #
+    # 單價 = SKU Mapping RSP
+    # 總價 = QTY * RSP
+    # ========================================================
+
+    output[
+        "UNIT_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "TOTAL_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "RAW_UNIT_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "RAW_TOTAL_PRICE"
+    ] = pd.NA
+
+
+    # ========================================================
+    # 17. Optional Fields
+    # ========================================================
+
+    output[
+        "RAW_BRAND"
+    ] = ""
+
+
+    output[
+        "RAW_SIZE"
+    ] = ""
+
+
+    output[
+        "RAW_CATEGORY"
+    ] = ""
+
+
+    # ========================================================
+    # 18. Audit
+    # ========================================================
+
+    output[
+        "SOURCE_QTY_COLUMN"
+    ] = "Column 2"
+
+
+    output[
+        "SOURCE_PRICE_COLUMN"
+    ] = (
+        "RSP_FROM_SKU_MAPPING"
+    )
+
+
+    # ========================================================
+    # 19. Return
+    # ========================================================
+
+    return output
+
+
+
+
+
+# ============================================================
 # Auto Detect Template Type
 #
 # Detection Priority:
@@ -5168,6 +5519,49 @@ def detect_template_type(uploaded_file):
         pass
 
 
+
+# ========================================================
+# TEMPLATE 10
+# 名酒集系列
+# No Header / Fixed SKU + QTY Columns
+# ========================================================
+
+    try:
+    
+        filename_text = norm_text(
+            Path(
+                uploaded_file.name
+            ).stem
+        )
+    
+    
+        filename_is_template_10 = (
+            "名酒集"
+            in filename_text
+        )
+    
+    
+        # 至少要有兩欄
+        has_minimum_columns = (
+            raw.shape[1] >= 2
+        )
+    
+    
+        if (
+            filename_is_template_10
+            and
+            has_minimum_columns
+        ):
+    
+            return "TEMPLATE_10"
+    
+    
+    except Exception:
+        pass
+
+
+
+
     
 
     # ========================================================
@@ -5491,6 +5885,23 @@ def auto_transform_template(uploaded_file):
             "Template 9｜新店李淨銷報表",
         )
 
+
+
+    elif template_type == "TEMPLATE_10":
+    
+        uploaded_file.seek(0)
+    
+        result = transform_template_10(
+            uploaded_file
+        )
+    
+        return (
+            result,
+            "Template 10｜名酒集無表頭 SKU / QTY",
+        )
+
+
+    
     
     # ========================================================
     # UNKNOWN
