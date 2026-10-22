@@ -4757,6 +4757,845 @@ def transform_template_10(uploaded_file):
     return output
 
 
+# ============================================================
+# TEMPLATE 11
+# 酒江村系列
+#
+# 國際條碼 -> RAW_PRODUCT_CODE
+# 品牌     -> RAW_SKU
+# 數量     -> QTY
+# ============================================================
+
+def transform_template_11(uploaded_file):
+
+    meta = parse_filename(
+        uploaded_file.name
+    )
+
+    uploaded_file.seek(0)
+
+    df = pd.read_excel(
+        uploaded_file,
+        sheet_name=0,
+        header=0,
+    )
+
+    df.columns = [
+        norm_text(c)
+        for c in df.columns
+    ]
+
+    product_code_col = first_matching_column(
+        df,
+        ["國際條碼"],
+    )
+
+    sku_col = first_matching_column(
+        df,
+        ["品牌"],
+    )
+
+    qty_col = first_matching_column(
+        df,
+        ["數量"],
+    )
+
+    if sku_col is None or qty_col is None:
+
+        raise ValueError(
+            "Template 11 找不到「品牌 / 數量」欄位。"
+        )
+
+    raw_sku = (
+        df[sku_col]
+        .map(norm_text)
+    )
+
+    qty = numeric(
+        df[qty_col]
+    )
+
+    valid = (
+        raw_sku.ne("")
+    )
+
+    df = (
+        df.loc[valid]
+        .reset_index(drop=True)
+    )
+
+    raw_sku = (
+        raw_sku.loc[valid]
+        .reset_index(drop=True)
+    )
+
+    qty = (
+        qty.loc[valid]
+        .reset_index(drop=True)
+    )
+
+    output = base_records(
+        df,
+        meta,
+        "T11_JIUJIANGCUN",
+        uploaded_file.name,
+    )
+
+    output["SOURCE_ROW"] = range(
+        2,
+        2 + len(df),
+    )
+
+    output["SOURCE_SHEET"] = "工作表1"
+
+    output["RAW_CUSTOMER"] = (
+        meta["FILE_RAWDATA_NAME"]
+    )
+
+    output["RAW_ROW_CUSTOMER"] = ""
+
+    output["RAW_PRODUCT_CODE"] = (
+        df[product_code_col]
+        .map(norm_text)
+        if product_code_col is not None
+        else ""
+    )
+
+    output["RAW_SKU"] = raw_sku
+    output["QTY"] = qty
+
+    output["UNIT_PRICE"] = pd.NA
+    output["TOTAL_PRICE"] = pd.NA
+
+    output["RAW_BRAND"] = ""
+    output["RAW_SIZE"] = ""
+    output["RAW_CATEGORY"] = ""
+
+    output["SOURCE_QTY_COLUMN"] = qty_col
+    output["SOURCE_PRICE_COLUMN"] = (
+        "RSP_FROM_SKU_MAPPING"
+    )
+
+    return output
+
+# ============================================================
+# TEMPLATE 12
+# 廣茂隆 POS Public Format Variant
+#
+# SKU = 品項名稱 SKU Name
+# QTY = 最後一欄 Column J
+# ============================================================
+
+def transform_template_12(uploaded_file):
+
+    meta = parse_filename(
+        uploaded_file.name
+    )
+
+    uploaded_file.seek(0)
+
+    df = pd.read_excel(
+        uploaded_file,
+        sheet_name=0,
+        header=0,
+    )
+
+    df.columns = [
+        norm_text(c)
+        for c in df.columns
+    ]
+
+    sku_col = first_matching_column(
+        df,
+        [
+            "品項名稱 SKU Name",
+            "品項名稱",
+        ],
+    )
+
+    brand_col = first_matching_column(
+        df,
+        [
+            "品牌名稱 Brand Name",
+            "品牌名稱",
+        ],
+    )
+
+    size_col = first_matching_column(
+        df,
+        [
+            "規格 Size (ml)",
+            "規格",
+        ],
+    )
+
+    category_col = first_matching_column(
+        df,
+        [
+            "品類 Category",
+            "品類",
+        ],
+    )
+
+    product_code_col = first_matching_column(
+        df,
+        [
+            "品項代碼（保樂力加產品） SKU code (for PRT)",
+            "SKU code",
+        ],
+    )
+
+    if sku_col is None:
+
+        raise ValueError(
+            "Template 12 找不到品項名稱。"
+        )
+
+    # 最後一欄就是實際 QTY
+    qty_col = df.columns[-1]
+
+    raw_sku = (
+        df[sku_col]
+        .map(norm_text)
+    )
+
+    qty = numeric(
+        df.iloc[:, -1]
+    )
+
+    # 這類公版很多 SKU 是清單但沒有銷量
+    # 保留 SKU，但 QTY 沒值者後續仍可 audit
+    valid = raw_sku.ne("")
+
+    df = (
+        df.loc[valid]
+        .reset_index(drop=True)
+    )
+
+    raw_sku = (
+        raw_sku.loc[valid]
+        .reset_index(drop=True)
+    )
+
+    qty = (
+        qty.loc[valid]
+        .reset_index(drop=True)
+    )
+
+    output = base_records(
+        df,
+        meta,
+        "T12_POS_BLANK_QTY_HEADER",
+        uploaded_file.name,
+    )
+
+    output["SOURCE_ROW"] = range(
+        2,
+        2 + len(df),
+    )
+
+    output["SOURCE_SHEET"] = (
+        str(pd.ExcelFile(uploaded_file).sheet_names[0])
+        if False
+        else "Sheet1"
+    )
+
+    output["RAW_CUSTOMER"] = (
+        meta["FILE_RAWDATA_NAME"]
+    )
+
+    output["RAW_ROW_CUSTOMER"] = ""
+
+    output["RAW_SKU"] = raw_sku
+    output["QTY"] = qty
+
+    output["RAW_PRODUCT_CODE"] = (
+        df[product_code_col].map(norm_text)
+        if product_code_col is not None
+        else ""
+    )
+
+    output["RAW_BRAND"] = (
+        df[brand_col].map(norm_text)
+        if brand_col is not None
+        else ""
+    )
+
+    output["RAW_SIZE"] = (
+        df[size_col].map(norm_text)
+        if size_col is not None
+        else ""
+    )
+
+    output["RAW_CATEGORY"] = (
+        df[category_col].map(norm_text)
+        if category_col is not None
+        else ""
+    )
+
+    output["UNIT_PRICE"] = pd.NA
+    output["TOTAL_PRICE"] = pd.NA
+
+    output["SOURCE_QTY_COLUMN"] = (
+        "LAST_COLUMN"
+    )
+
+    output["SOURCE_PRICE_COLUMN"] = (
+        "RSP_FROM_SKU_MAPPING"
+    )
+
+    return output
+    
+# ============================================================
+# TEMPLATE 13
+# 橡木桶 Monthly Horizontal Report
+# ============================================================
+
+def transform_template_13(uploaded_file):
+
+    meta = parse_filename(
+        uploaded_file.name
+    )
+
+    uploaded_file.seek(0)
+
+    raw = pd.read_excel(
+        uploaded_file,
+        sheet_name=0,
+        header=None,
+    )
+
+    # ========================================================
+    # Month from filename
+    # ========================================================
+
+    month_number = int(
+        meta["MONTH"]
+    )
+
+    month_map = {
+        1: "JAN",
+        2: "FEB",
+        3: "MAR",
+        4: "APR",
+        5: "MAY",
+        6: "JUN",
+        7: "JUL",
+        8: "AUG",
+        9: "SEP",
+        10: "OCT",
+        11: "NOV",
+        12: "DEC",
+    }
+
+    target_month = month_map[
+        month_number
+    ]
+
+    # ========================================================
+    # Find month header row
+    # ========================================================
+
+    header_row = None
+    qty_col_idx = None
+
+    for i in range(
+        min(20, len(raw))
+    ):
+
+        values = [
+            norm_text(x).upper()
+            for x
+            in raw.iloc[i].tolist()
+        ]
+
+        if target_month in values:
+
+            header_row = i
+
+            qty_col_idx = (
+                values.index(
+                    target_month
+                )
+            )
+
+            break
+
+    if header_row is None:
+
+        raise ValueError(
+            f"Template 13 找不到月份欄位：{target_month}"
+        )
+
+    # ========================================================
+    # Data:
+    # Column A = Product Code
+    # Column B = SKU
+    # ========================================================
+
+    product_code = (
+        raw.iloc[
+            header_row + 1:,
+            0
+        ]
+        .map(norm_text)
+        .reset_index(drop=True)
+    )
+
+    raw_sku = (
+        raw.iloc[
+            header_row + 1:,
+            1
+        ]
+        .map(norm_text)
+        .reset_index(drop=True)
+    )
+
+    qty = numeric(
+        raw.iloc[
+            header_row + 1:,
+            qty_col_idx
+        ]
+        .reset_index(drop=True)
+    )
+
+    data = pd.DataFrame({
+        "RAW_PRODUCT_CODE":
+            product_code,
+
+        "RAW_SKU":
+            raw_sku,
+
+        "QTY":
+            qty,
+    })
+
+    # Remove TOTAL / empty rows
+    valid = (
+        data["RAW_SKU"].ne("")
+        &
+        ~data[
+            "RAW_PRODUCT_CODE"
+        ]
+        .str.upper()
+        .eq("TOTAL:")
+    )
+
+    data = (
+        data.loc[valid]
+        .reset_index(drop=True)
+    )
+
+    output = base_records(
+        data,
+        meta,
+        "T13_MONTHLY_HORIZONTAL",
+        uploaded_file.name,
+    )
+
+    output["SOURCE_SHEET"] = "Page1"
+
+    output["SOURCE_ROW"] = range(
+        header_row + 2,
+        header_row + 2 + len(data),
+    )
+
+    output["RAW_CUSTOMER"] = (
+        meta["FILE_RAWDATA_NAME"]
+    )
+
+    output["RAW_ROW_CUSTOMER"] = ""
+
+    output["RAW_PRODUCT_CODE"] = (
+        data["RAW_PRODUCT_CODE"]
+    )
+
+    output["RAW_SKU"] = (
+        data["RAW_SKU"]
+    )
+
+    output["QTY"] = (
+        data["QTY"]
+    )
+
+    output["UNIT_PRICE"] = pd.NA
+    output["TOTAL_PRICE"] = pd.NA
+
+    output["RAW_BRAND"] = ""
+    output["RAW_SIZE"] = ""
+    output["RAW_CATEGORY"] = ""
+
+    output["SOURCE_QTY_COLUMN"] = (
+        target_month
+    )
+
+    output["SOURCE_PRICE_COLUMN"] = (
+        "RSP_FROM_SKU_MAPPING"
+    )
+
+    return output
+
+
+
+# ============================================================
+# TEMPLATE 14
+# 美滿商行 Grouped Product Report
+# ============================================================
+
+def transform_template_14(uploaded_file):
+
+    meta = parse_filename(
+        uploaded_file.name
+    )
+
+    uploaded_file.seek(0)
+
+    raw = pd.read_excel(
+        uploaded_file,
+        sheet_name=0,
+        header=None,
+        engine="xlrd",
+    )
+
+    records = []
+
+    current_sku = ""
+    current_product_code = ""
+
+    for row_idx in range(
+        len(raw)
+    ):
+
+        row = raw.iloc[
+            row_idx
+        ]
+
+        values = [
+            norm_text(x)
+            for x in row.tolist()
+        ]
+
+        normalized = [
+            norm_key(x)
+            for x in values
+        ]
+
+        # ====================================================
+        # Product Name Row
+        # ====================================================
+
+        if any(
+            "產品名稱"
+            in x
+            for x in normalized
+        ):
+
+            text_candidates = []
+
+            code_candidates = []
+
+            for value in values:
+
+                value = norm_text(value)
+
+                if not value:
+                    continue
+
+                if "產品名稱" in norm_key(value):
+                    continue
+
+                if re.match(
+                    r"^[A-Za-z]\d{3}",
+                    value,
+                ):
+
+                    code_candidates.append(
+                        value
+                    )
+
+                else:
+
+                    text_candidates.append(
+                        value
+                    )
+
+            if code_candidates:
+
+                current_product_code = (
+                    code_candidates[0]
+                )
+
+            if text_candidates:
+
+                current_sku = max(
+                    text_candidates,
+                    key=len,
+                )
+
+            continue
+
+        # ====================================================
+        # Total Row
+        # ====================================================
+
+        if any(
+            "合計"
+            in x
+            for x in normalized
+        ):
+
+            numeric_values = []
+
+            for value in values:
+
+                n = pd.to_numeric(
+                    str(value)
+                    .replace(",", ""),
+                    errors="coerce",
+                )
+
+                if pd.notna(n):
+
+                    numeric_values.append(
+                        n
+                    )
+
+            if (
+                current_sku
+                and
+                numeric_values
+            ):
+
+                records.append({
+                    "RAW_PRODUCT_CODE":
+                        current_product_code,
+
+                    "RAW_SKU":
+                        current_sku,
+
+                    "QTY":
+                        numeric_values[-1],
+
+                    "SOURCE_ROW":
+                        row_idx + 1,
+                })
+
+            current_sku = ""
+            current_product_code = ""
+
+    if not records:
+
+        raise ValueError(
+            "Template 14 找不到有效「產品名稱 / 合計」區塊。"
+        )
+
+    data = pd.DataFrame(
+        records
+    )
+
+    output = base_records(
+        data,
+        meta,
+        "T14_GROUPED_PRODUCT_REPORT",
+        uploaded_file.name,
+    )
+
+    output["SOURCE_ROW"] = (
+        data["SOURCE_ROW"]
+    )
+
+    output["SOURCE_SHEET"] = "Sheet1"
+
+    output["RAW_CUSTOMER"] = (
+        meta["FILE_RAWDATA_NAME"]
+    )
+
+    output["RAW_ROW_CUSTOMER"] = ""
+
+    output["RAW_PRODUCT_CODE"] = (
+        data["RAW_PRODUCT_CODE"]
+    )
+
+    output["RAW_SKU"] = (
+        data["RAW_SKU"]
+    )
+
+    output["QTY"] = (
+        data["QTY"]
+    )
+
+    output["UNIT_PRICE"] = pd.NA
+    output["TOTAL_PRICE"] = pd.NA
+
+    output["RAW_BRAND"] = ""
+    output["RAW_SIZE"] = ""
+    output["RAW_CATEGORY"] = ""
+
+    output["SOURCE_QTY_COLUMN"] = (
+        "合計"
+    )
+
+    output["SOURCE_PRICE_COLUMN"] = (
+        "RSP_FROM_SKU_MAPPING"
+    )
+
+    return output
+
+
+# ============================================================
+# TEMPLATE 15
+# Multi-sheet SKU / QTY
+# Example: 精湛酒藏
+# ============================================================
+
+def transform_template_15(uploaded_file):
+
+    meta = parse_filename(
+        uploaded_file.name
+    )
+
+    uploaded_file.seek(0)
+
+    sheets = pd.read_excel(
+        uploaded_file,
+        sheet_name=None,
+        header=0,
+    )
+
+    frames = []
+
+    for (
+        sheet_name,
+        df
+    ) in sheets.items():
+
+        if df.empty:
+            continue
+
+        df.columns = [
+            norm_text(c)
+            for c
+            in df.columns
+        ]
+
+        sku_col = first_matching_column(
+            df,
+            [
+                "產品名稱",
+                "商品名稱",
+                "貨品名稱",
+                "品項名稱",
+                "品名",
+            ],
+        )
+
+        qty_col = first_matching_column(
+            df,
+            [
+                "銷售量",
+                "數量",
+                "銷量",
+                "Quantity",
+                "QTY",
+            ],
+        )
+
+        if (
+            sku_col is None
+            or
+            qty_col is None
+        ):
+
+            continue
+
+        temp = pd.DataFrame()
+
+        temp["RAW_SKU"] = (
+            df[sku_col]
+            .map(norm_text)
+        )
+
+        temp["QTY"] = numeric(
+            df[qty_col]
+        )
+
+        temp["SOURCE_SHEET"] = (
+            sheet_name
+        )
+
+        temp["SOURCE_ROW"] = range(
+            2,
+            2 + len(temp),
+        )
+
+        temp = temp[
+            temp["RAW_SKU"]
+            .ne("")
+        ].copy()
+
+        frames.append(
+            temp
+        )
+
+    if not frames:
+
+        raise ValueError(
+            "Template 15 沒有找到可用的 SKU / QTY Sheet。"
+        )
+
+    data = pd.concat(
+        frames,
+        ignore_index=True,
+    )
+
+    output = base_records(
+        data,
+        meta,
+        "T15_MULTI_SHEET_SKU_QTY",
+        uploaded_file.name,
+    )
+
+    output["SOURCE_SHEET"] = (
+        data["SOURCE_SHEET"]
+    )
+
+    output["SOURCE_ROW"] = (
+        data["SOURCE_ROW"]
+    )
+
+    output["RAW_CUSTOMER"] = (
+        meta["FILE_RAWDATA_NAME"]
+    )
+
+    output["RAW_ROW_CUSTOMER"] = ""
+
+    output["RAW_PRODUCT_CODE"] = ""
+
+    output["RAW_SKU"] = (
+        data["RAW_SKU"]
+    )
+
+    output["QTY"] = (
+        data["QTY"]
+    )
+
+    output["UNIT_PRICE"] = pd.NA
+    output["TOTAL_PRICE"] = pd.NA
+
+    output["RAW_BRAND"] = ""
+    output["RAW_SIZE"] = ""
+    output["RAW_CATEGORY"] = ""
+
+    output["SOURCE_QTY_COLUMN"] = (
+        "銷售量"
+    )
+
+    output["SOURCE_PRICE_COLUMN"] = (
+        "RSP_FROM_SKU_MAPPING"
+    )
+
+    return output
+
 
 
 
@@ -5559,10 +6398,140 @@ def detect_template_type(uploaded_file):
     except Exception:
         pass
 
+# ========================================================
+# TEMPLATE 11
+# 酒江村
+# ========================================================
 
-
-
+    try:
     
+        normalized_columns = [
+            norm_key(x)
+            for x
+            in raw.iloc[0].tolist()
+            if norm_text(x)
+        ]
+    
+        if (
+            norm_key("國際條碼") in normalized_columns
+            and
+            norm_key("品牌") in normalized_columns
+            and
+            norm_key("數量") in normalized_columns
+        ):
+    
+            return "TEMPLATE_11"
+    
+    except Exception:
+        pass
+
+# ========================================================
+# TEMPLATE 12
+# POS 公版 + Blank QTY Header
+# ========================================================
+
+    try:
+    
+        filename_text = norm_text(
+            Path(uploaded_file.name).stem
+        )
+    
+        first_row = [
+            norm_key(x)
+            for x in raw.iloc[0].tolist()
+            if norm_text(x)
+        ]
+    
+        if (
+            "廣茂隆" in filename_text
+            and
+            any(
+                norm_key("品項名稱")
+                in x
+                for x in first_row
+            )
+            and raw.shape[1] >= 10
+        ):
+    
+            return "TEMPLATE_12"
+    
+    except Exception:
+        pass
+
+
+# ========================================================
+# TEMPLATE 13
+# 橡木桶
+# ========================================================
+
+try:
+
+    filename_text = norm_text(
+        Path(uploaded_file.name).stem
+    )
+
+    first_20_text = " ".join(
+        norm_text(x).upper()
+        for x
+        in raw.iloc[:20]
+        .to_numpy()
+        .flatten()
+    )
+
+    if (
+        "橡木桶" in filename_text
+        and
+        "JAN" in first_20_text
+        and
+        "SEP" in first_20_text
+        and
+        "DEC" in first_20_text
+    ):
+
+        return "TEMPLATE_13"
+
+except Exception:
+    pass
+
+
+#Template 14     
+
+    if (
+        suffix == ".xls"
+        and
+        "美滿商行"
+        in norm_text(
+            Path(uploaded_file.name).stem
+        )
+    ):
+    
+        return "TEMPLATE_14"
+        
+
+
+    # ========================================================
+# TEMPLATE 15
+# 精湛酒藏 Multi-sheet
+# ========================================================
+
+    try:
+    
+        filename_text = norm_text(
+            Path(uploaded_file.name).stem
+        )
+    
+        if (
+            "精湛酒藏"
+            in filename_text
+            and
+            len(sheet_names) > 1
+        ):
+    
+            return "TEMPLATE_15"
+    
+    except Exception:
+        pass
+
 
     # ========================================================
     # TEMPLATE 7
@@ -5901,7 +6870,77 @@ def auto_transform_template(uploaded_file):
         )
 
 
+    elif template_type == "TEMPLATE_11":
     
+        uploaded_file.seek(0)
+    
+        result = transform_template_11(
+            uploaded_file
+        )
+    
+        return (
+            result,
+            "Template 11｜酒江村商品銷量",
+        )
+    
+    
+    elif template_type == "TEMPLATE_12":
+    
+        uploaded_file.seek(0)
+    
+        result = transform_template_12(
+            uploaded_file
+        )
+    
+        return (
+            result,
+            "Template 12｜POS 公版無 QTY Header",
+        )
+    
+    
+    elif template_type == "TEMPLATE_13":
+    
+        uploaded_file.seek(0)
+    
+        result = transform_template_13(
+            uploaded_file
+        )
+    
+        return (
+            result,
+            "Template 13｜橡木桶月份實銷",
+        )
+    
+    
+    elif template_type == "TEMPLATE_14":
+    
+        uploaded_file.seek(0)
+    
+        result = transform_template_14(
+            uploaded_file
+        )
+    
+        return (
+            result,
+            "Template 14｜美滿商行商品彙總",
+        )
+    
+    
+    elif template_type == "TEMPLATE_15":
+    
+        uploaded_file.seek(0)
+    
+        result = transform_template_15(
+            uploaded_file
+        )
+    
+        return (
+            result,
+            "Template 15｜Multi-sheet SKU / QTY",
+        )
+        
+
+
     
     # ========================================================
     # UNKNOWN
@@ -5971,6 +7010,7 @@ STANDARD_HEADER_MAPPING = {
         "SKU Name",
         "Product Name",
         "產品品名",
+        "單品名稱",
     ],
 
 
