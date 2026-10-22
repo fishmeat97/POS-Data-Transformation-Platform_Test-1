@@ -5619,6 +5619,30 @@ def detect_template_type(uploaded_file):
         uploaded_file.name
     ).suffix.lower()
 
+     filename_text = norm_text(
+        Path(
+            uploaded_file.name
+        ).stem
+    )
+
+
+    # ========================================================
+    # TEMPLATE 14
+    # IMPORTANT:
+    # 必須在任何 pd.ExcelFile / pd.read_excel 之前判斷
+    #
+    # 因為這是舊式 .xls 特殊報表
+    # ========================================================
+
+    if (
+        suffix == ".xls"
+        and
+        "美滿商行"
+        in filename_text
+    ):
+
+        return "TEMPLATE_14"
+
 
     # ========================================================
     # CSV
@@ -6493,19 +6517,6 @@ def detect_template_type(uploaded_file):
     except Exception:
         pass
     
-    
-    #Template 14     
-    
-        if (
-            suffix == ".xls"
-            and
-            "美滿商行"
-            in norm_text(
-                Path(uploaded_file.name).stem
-            )
-        ):
-        
-            return "TEMPLATE_14"
         
 
 
