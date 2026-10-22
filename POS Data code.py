@@ -5619,7 +5619,7 @@ def detect_template_type(uploaded_file):
         uploaded_file.name
     ).suffix.lower()
 
-     filename_text = norm_text(
+    filename_text = norm_text(
         Path(
             uploaded_file.name
         ).stem
