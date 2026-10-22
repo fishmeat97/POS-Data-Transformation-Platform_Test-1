@@ -6464,48 +6464,48 @@ def detect_template_type(uploaded_file):
 # 橡木桶
 # ========================================================
 
-try:
-
-    filename_text = norm_text(
-        Path(uploaded_file.name).stem
-    )
-
-    first_20_text = " ".join(
-        norm_text(x).upper()
-        for x
-        in raw.iloc[:20]
-        .to_numpy()
-        .flatten()
-    )
-
-    if (
-        "橡木桶" in filename_text
-        and
-        "JAN" in first_20_text
-        and
-        "SEP" in first_20_text
-        and
-        "DEC" in first_20_text
-    ):
-
-        return "TEMPLATE_13"
-
-except Exception:
-    pass
-
-
-#Template 14     
-
-    if (
-        suffix == ".xls"
-        and
-        "美滿商行"
-        in norm_text(
+    try:
+    
+        filename_text = norm_text(
             Path(uploaded_file.name).stem
         )
-    ):
     
-        return "TEMPLATE_14"
+        first_20_text = " ".join(
+            norm_text(x).upper()
+            for x
+            in raw.iloc[:20]
+            .to_numpy()
+            .flatten()
+        )
+    
+        if (
+            "橡木桶" in filename_text
+            and
+            "JAN" in first_20_text
+            and
+            "SEP" in first_20_text
+            and
+            "DEC" in first_20_text
+        ):
+    
+            return "TEMPLATE_13"
+    
+    except Exception:
+        pass
+    
+    
+    #Template 14     
+    
+        if (
+            suffix == ".xls"
+            and
+            "美滿商行"
+            in norm_text(
+                Path(uploaded_file.name).stem
+            )
+        ):
+        
+            return "TEMPLATE_14"
         
 
 
