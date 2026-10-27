@@ -7180,12 +7180,12 @@ def auto_transform_template(uploaded_file):
     result = transform_template_8(
         uploaded_file
     )
-
-    return (
-        result,
-        "Template 8｜唯君系列",
-    )
-        
+    
+        return (
+            result,
+            "Template 8｜唯君系列",
+        )
+            
 
     elif template_type == "TEMPLATE_9":
     
