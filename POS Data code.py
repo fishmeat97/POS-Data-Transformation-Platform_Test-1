@@ -6805,7 +6805,7 @@ def auto_transform_template(uploaded_file):
     
         return (
             result,
-            "Template 8｜(唯君)",
+            "Template 8｜唯君",
         )
         
 
