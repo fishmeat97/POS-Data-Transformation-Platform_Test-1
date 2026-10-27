@@ -4174,16 +4174,6 @@ def transform_template_8(
     # output.attrs can store debug information
     # ========================================================
 
-    output.attrs[
-        "TEMPLATE_8_SHEET_LOG"
-    ] = (
-        pd.DataFrame(
-            sheet_logs
-        )
-    )
-
-
-    return output
 
 
 
@@ -9145,7 +9135,8 @@ for file in template_files:
             file
         )
 
-
+        data.attrs = {}
+        
         frames.append(
             data
         )
