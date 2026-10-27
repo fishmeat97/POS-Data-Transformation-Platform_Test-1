@@ -3288,79 +3288,346 @@ def transform_template_7(uploaded_file):
     return output
 
 # ============================================================
-# TEMPLATE 8
-# Multi-sheet Sales Report
-# Example: 唯君-西螺（欣州）
-#
-# Sheets:
-# Table 1
-# Table 2
-# Table 3
-# Table 4
-#
-# Structure:
-#
-# 商品條碼 -> 第一欄
-# 商品名稱 -> 中間文字欄，自動辨識
-# 數量     -> 銷貨金額前最後一個有效數字
-# 銷貨金額 -> 每列最後一個有效數字
-#
-# IMPORTANT:
-# 不同 Sheet 欄位位置不同，
-# 因此不能使用固定 column index。
-#
-# Customer:
-# From filename
-#
-# Price:
-# Source 銷貨金額只保留 Audit
-# Final Report 統一使用 SKU Mapping RSP
-# ============================================================
-
 # ============================================================
 # TEMPLATE 8
 # 唯君 / 欣州
 #
-# Different SKU column for each sheet
-# QTY can also be configured per sheet
+# Generic Multi-sheet Parser
+#
+# Logic:
+# 1. Find header row automatically
+# 2. Detect SKU column by aliases
+# 3. Detect QTY column by aliases
+# 4. Fallback to column profiling
 # ============================================================
 
-TEMPLATE_8_SHEET_CONFIG = {
 
-    # 請依實際 workbook 修改 SKU_COL
-    "Table 1": {
-        "SKU_COL": 1,   # B
-        "QTY_COL": 9,   # J
-    },
-
-    "Table 2": {
-        "SKU_COL": 1,   # B
-        "QTY_COL": 9,   # J
-    },
-
-    "Table 3": {
-        "SKU_COL": 1,   # B
-        "QTY_COL": 9,   # J
-    },
-
-    "Table 4": {
-        "SKU_COL": 1,   # B
-        "QTY_COL": 9,   # J
-    },
-
-    "Table 5": {
-            "SKU_COL": 2,   # C
-            "QTY_COL": 10,   # K
-        },
-    
-}
+TEMPLATE_8_SKU_ALIASES = [
+    "商品名稱",
+    "品名",
+    "品項名稱",
+    "產品名稱",
+    "商 品 名 稱 規 格",
+    "SKU",
+    "SKU Name",
+    "Product Name",
+    "Description",
+]
 
 
-def transform_template_8(uploaded_file):
+TEMPLATE_8_QTY_ALIASES = [
+    "數量",
+    "銷量",
+    "瓶數",
+    "實銷",
+    "銷售量",
+    "Quantity",
+    "QTY",
+]
 
-    # ========================================================
-    # 1. Parse Filename
-    # ========================================================
+
+# ============================================================
+# Helper
+# Find Header Row
+# ============================================================
+
+def find_template_8_header_row(
+    raw,
+    max_rows=30,
+):
+
+    for i in range(
+        min(
+            max_rows,
+            len(raw),
+        )
+    ):
+
+        values = [
+            norm_text(x)
+            for x
+            in raw.iloc[i].tolist()
+        ]
+
+
+        sku_found = any(
+
+            any(
+                norm_key(alias)
+                ==
+                norm_key(value)
+
+                for alias
+                in TEMPLATE_8_SKU_ALIASES
+            )
+
+            for value
+            in values
+
+            if value
+        )
+
+
+        qty_found = any(
+
+            any(
+                norm_key(alias)
+                ==
+                norm_key(value)
+
+                for alias
+                in TEMPLATE_8_QTY_ALIASES
+            )
+
+            for value
+            in values
+
+            if value
+        )
+
+
+        if (
+            sku_found
+            and
+            qty_found
+        ):
+
+            return i
+
+
+    return None
+
+
+# ============================================================
+# Helper
+# Detect SKU Column by Data
+#
+# Fallback only
+# ============================================================
+
+def detect_sku_column_by_content(
+    df,
+):
+
+    candidates = []
+
+
+    for column in df.columns:
+
+        series = (
+            df[column]
+            .dropna()
+            .map(norm_text)
+        )
+
+
+        if series.empty:
+            continue
+
+
+        # ----------------------------------------------------
+        # Text ratio
+        # SKU should mostly contain text
+        # ----------------------------------------------------
+
+        text_count = 0
+        valid_count = 0
+
+
+        for value in series.head(100):
+
+            if not value:
+                continue
+
+
+            valid_count += 1
+
+
+            numeric_value = pd.to_numeric(
+                value
+                .replace(",", ""),
+                errors="coerce",
+            )
+
+
+            if pd.isna(
+                numeric_value
+            ):
+
+                text_count += 1
+
+
+        if valid_count == 0:
+            continue
+
+
+        text_ratio = (
+            text_count
+            /
+            valid_count
+        )
+
+
+        # ----------------------------------------------------
+        # Average string length
+        # ----------------------------------------------------
+
+        avg_length = (
+            series
+            .astype(str)
+            .str.len()
+            .mean()
+        )
+
+
+        # ----------------------------------------------------
+        # Score
+        # ----------------------------------------------------
+
+        score = (
+            text_ratio * 100
+            +
+            min(
+                avg_length,
+                50,
+            )
+        )
+
+
+        candidates.append(
+            (
+                score,
+                column,
+            )
+        )
+
+
+    if not candidates:
+        return None
+
+
+    candidates.sort(
+        reverse=True,
+        key=lambda x: x[0],
+    )
+
+
+    return candidates[0][1]
+
+
+# ============================================================
+# Helper
+# Detect QTY Column by Data
+#
+# Fallback only
+# ============================================================
+
+def detect_qty_column_by_content(
+    df,
+):
+
+    candidates = []
+
+
+    for column in df.columns:
+
+        series = numeric(
+            df[column]
+        )
+
+
+        valid_count = (
+            series
+            .notna()
+            .sum()
+        )
+
+
+        if valid_count == 0:
+            continue
+
+
+        total_count = len(
+            series
+        )
+
+
+        numeric_ratio = (
+            valid_count
+            /
+            max(
+                total_count,
+                1,
+            )
+        )
+
+
+        # ----------------------------------------------------
+        # QTY usually:
+        # - numeric
+        # - not huge monetary numbers
+        # ----------------------------------------------------
+
+        valid_values = (
+            series
+            .dropna()
+        )
+
+
+        median_value = (
+            valid_values
+            .abs()
+            .median()
+        )
+
+
+        score = (
+            numeric_ratio
+            * 100
+        )
+
+
+        # Penalize large amount-like columns
+        if (
+            pd.notna(
+                median_value
+            )
+            and
+            median_value > 10000
+        ):
+
+            score -= 50
+
+
+        candidates.append(
+            (
+                score,
+                column,
+            )
+        )
+
+
+    if not candidates:
+        return None
+
+
+    candidates.sort(
+        reverse=True,
+        key=lambda x: x[0],
+    )
+
+
+    return candidates[0][1]
+
+
+# ============================================================
+# TEMPLATE 8
+# Generic Transformer
+# ============================================================
+
+def transform_template_8(
+    uploaded_file
+):
 
     meta = parse_filename(
         uploaded_file.name
@@ -3368,7 +3635,7 @@ def transform_template_8(uploaded_file):
 
 
     # ========================================================
-    # 2. Read All Sheets
+    # Read All Sheets
     # ========================================================
 
     uploaded_file.seek(0)
@@ -3383,177 +3650,374 @@ def transform_template_8(uploaded_file):
     if not sheets:
 
         raise ValueError(
-            "Template 8 找不到任何工作表。"
+            "Template 8 找不到工作表。"
         )
 
-
-    # ========================================================
-    # 3. Collect Data
-    # ========================================================
 
     frames = []
+    sheet_logs = []
 
 
-    for sheet_name, raw in sheets.items():
+    # ========================================================
+    # Process Each Sheet Separately
+    # ========================================================
 
-        if raw is None or raw.empty:
-            continue
+    for (
+        sheet_name,
+        raw
+    ) in sheets.items():
 
-
-        # ====================================================
-        # Get Config for Current Sheet
-        # ====================================================
-
-        config = TEMPLATE_8_SHEET_CONFIG.get(
-            sheet_name
-        )
-
-
-        # ----------------------------------------------------
-        # Sheet 沒設定 → 不直接猜
-        # ----------------------------------------------------
-
-        if config is None:
+        if (
+            raw is None
+            or
+            raw.empty
+        ):
 
             continue
 
 
-        sku_col_idx = config[
-            "SKU_COL"
-        ]
+        try:
 
-        qty_col_idx = config[
-            "QTY_COL"
-        ]
+            # =================================================
+            # 1. Find Header
+            # =================================================
 
-
-        # ====================================================
-        # Validate Column Count
-        # ====================================================
-
-        required_max_col = max(
-            sku_col_idx,
-            qty_col_idx,
-        )
-
-
-        if raw.shape[1] <= required_max_col:
-
-            raise ValueError(
-                f"Template 8 Sheet [{sheet_name}] "
-                f"欄位不足。"
-                f"目前 {raw.shape[1]} 欄，"
-                f"但設定需要 index {required_max_col}。"
+            header_row = (
+                find_template_8_header_row(
+                    raw
+                )
             )
 
 
-        # ====================================================
-        # SKU
-        # ====================================================
+            # =================================================
+            # 2. Header-based mode
+            # =================================================
 
-        raw_sku = (
-            raw.iloc[
-                :,
-                sku_col_idx
-            ]
-            .map(
-                norm_text
+            if header_row is not None:
+
+                uploaded_file.seek(0)
+
+                df = pd.read_excel(
+                    uploaded_file,
+                    sheet_name=sheet_name,
+                    header=header_row,
+                )
+
+
+                df.columns = [
+                    norm_text(c)
+                    for c
+                    in df.columns
+                ]
+
+
+                df = (
+                    df
+                    .dropna(
+                        how="all"
+                    )
+                    .reset_index(
+                        drop=True
+                    )
+                )
+
+
+                # ---------------------------------------------
+                # SKU
+                # ---------------------------------------------
+
+                sku_col = (
+                    first_matching_column(
+                        df,
+                        TEMPLATE_8_SKU_ALIASES,
+                    )
+                )
+
+
+                # ---------------------------------------------
+                # QTY
+                # ---------------------------------------------
+
+                qty_col = (
+                    first_matching_column(
+                        df,
+                        TEMPLATE_8_QTY_ALIASES,
+                    )
+                )
+
+
+                detection_method = (
+                    "HEADER"
+                )
+
+
+            # =================================================
+            # 3. No recognizable header
+            #    Use column profiling
+            # =================================================
+
+            else:
+
+                df = (
+                    raw
+                    .copy()
+                    .dropna(
+                        how="all"
+                    )
+                    .reset_index(
+                        drop=True
+                    )
+                )
+
+
+                sku_col = (
+                    detect_sku_column_by_content(
+                        df
+                    )
+                )
+
+
+                qty_col = (
+                    detect_qty_column_by_content(
+                        df
+                    )
+                )
+
+
+                detection_method = (
+                    "CONTENT_PROFILE"
+                )
+
+
+            # =================================================
+            # 4. Validate
+            # =================================================
+
+            if (
+                sku_col is None
+                or
+                qty_col is None
+            ):
+
+                raise ValueError(
+                    f"SKU={sku_col}, "
+                    f"QTY={qty_col}"
+                )
+
+
+            # =================================================
+            # 5. Extract
+            # =================================================
+
+            raw_sku = (
+                df[
+                    sku_col
+                ]
+                .map(
+                    norm_text
+                )
             )
-        )
 
 
-        # ====================================================
-        # QTY
-        # ====================================================
-
-        qty = numeric(
-            raw.iloc[
-                :,
-                qty_col_idx
-            ]
-        )
-
-
-        # ====================================================
-        # Valid Rows
-        #
-        # SKU must exist
-        # QTY must be numeric
-        # ====================================================
-
-        valid = (
-            raw_sku.ne("")
-            &
-            qty.notna()
-        )
-
-
-        if not valid.any():
-            continue
-
-
-        # ====================================================
-        # Keep Data
-        # ====================================================
-
-        temp = pd.DataFrame({
-
-            "RAW_SKU":
-                raw_sku.loc[
-                    valid
+            qty = numeric(
+                df[
+                    qty_col
                 ]
-                .reset_index(
-                    drop=True
-                ),
+            )
 
-            "QTY":
-                qty.loc[
-                    valid
-                ]
-                .reset_index(
-                    drop=True
-                ),
 
-            "SOURCE_ROW":
-                (
-                    raw.index[
+            # =================================================
+            # 6. Valid Rows
+            # =================================================
+
+            valid = (
+                raw_sku.ne("")
+                &
+                qty.notna()
+            )
+
+
+            if not valid.any():
+
+                raise ValueError(
+                    "找到欄位但沒有有效資料。"
+                )
+
+
+            # =================================================
+            # 7. Build Sheet Data
+            # =================================================
+
+            temp = pd.DataFrame({
+
+                "RAW_SKU":
+                    raw_sku.loc[
+                        valid
+                    ]
+                    .reset_index(
+                        drop=True
+                    ),
+
+                "QTY":
+                    qty.loc[
+                        valid
+                    ]
+                    .reset_index(
+                        drop=True
+                    ),
+
+            })
+
+
+            if header_row is not None:
+
+                temp[
+                    "SOURCE_ROW"
+                ] = (
+                    df.index[
+                        valid
+                    ]
+                    +
+                    header_row
+                    +
+                    2
+                ).tolist()
+
+            else:
+
+                temp[
+                    "SOURCE_ROW"
+                ] = (
+                    df.index[
                         valid
                     ]
                     + 1
-                ).tolist(),
-
-            "SOURCE_SHEET":
-                sheet_name,
-
-            # audit
-            "SOURCE_SKU_COLUMN":
-                sku_col_idx,
-
-            "SOURCE_QTY_COLUMN":
-                qty_col_idx,
-        })
+                ).tolist()
 
 
-        frames.append(
-            temp
-        )
+            temp[
+                "SOURCE_SHEET"
+            ] = sheet_name
+
+
+            temp[
+                "SOURCE_SKU_COLUMN"
+            ] = str(
+                sku_col
+            )
+
+
+            temp[
+                "SOURCE_QTY_COLUMN"
+            ] = str(
+                qty_col
+            )
+
+
+            temp[
+                "DETECTION_METHOD"
+            ] = (
+                detection_method
+            )
+
+
+            frames.append(
+                temp
+            )
+
+
+            # =================================================
+            # Success Log
+            # =================================================
+
+            sheet_logs.append({
+
+                "Sheet":
+                    sheet_name,
+
+                "Status":
+                    "SUCCESS",
+
+                "SKU Column":
+                    str(
+                        sku_col
+                    ),
+
+                "QTY Column":
+                    str(
+                        qty_col
+                    ),
+
+                "Method":
+                    detection_method,
+
+                "Rows":
+                    len(
+                        temp
+                    ),
+
+                "Error":
+                    "",
+
+            })
+
+
+        except Exception as e:
+
+            sheet_logs.append({
+
+                "Sheet":
+                    sheet_name,
+
+                "Status":
+                    "FAILED",
+
+                "SKU Column":
+                    "",
+
+                "QTY Column":
+                    "",
+
+                "Method":
+                    "",
+
+                "Rows":
+                    0,
+
+                "Error":
+                    (
+                        f"{type(e).__name__}: "
+                        f"{str(e)}"
+                    ),
+
+            })
 
 
     # ========================================================
-    # 4. Validate
+    # Validate All Sheets
     # ========================================================
 
     if not frames:
 
+        log_text = "; ".join(
+
+            f"{x['Sheet']}: "
+            f"{x['Error']}"
+
+            for x
+            in sheet_logs
+
+        )
+
+
         raise ValueError(
-            "Template 8 沒有找到有效資料。"
-            "請確認 TEMPLATE_8_SHEET_CONFIG "
-            "中的 Sheet 名稱 / SKU_COL / QTY_COL。"
+            "Template 8 所有 Sheet 都解析失敗。"
+            f" {log_text}"
         )
 
 
     # ========================================================
-    # 5. Combine
+    # Combine
     # ========================================================
 
     data = pd.concat(
@@ -3564,20 +4028,16 @@ def transform_template_8(uploaded_file):
 
 
     # ========================================================
-    # 6. Build Output
+    # Standard Output
     # ========================================================
 
     output = base_records(
         data,
         meta,
-        "T8_WEIJUN_MULTI_SHEET",
+        "T8_WEIJUN_GENERIC",
         uploaded_file.name,
     )
 
-
-    # ========================================================
-    # 7. Source
-    # ========================================================
 
     output[
         "SOURCE_ROW"
@@ -3597,10 +4057,6 @@ def transform_template_8(uploaded_file):
     )
 
 
-    # ========================================================
-    # 8. Customer
-    # ========================================================
-
     output[
         "RAW_CUSTOMER"
     ] = (
@@ -3615,10 +4071,6 @@ def transform_template_8(uploaded_file):
     ] = ""
 
 
-    # ========================================================
-    # 9. SKU
-    # ========================================================
-
     output[
         "RAW_SKU"
     ] = (
@@ -3627,10 +4079,6 @@ def transform_template_8(uploaded_file):
         ]
     )
 
-
-    # ========================================================
-    # 10. QTY
-    # ========================================================
 
     output[
         "QTY"
@@ -3641,18 +4089,10 @@ def transform_template_8(uploaded_file):
     )
 
 
-    # ========================================================
-    # 11. Product Code
-    # ========================================================
-
     output[
         "RAW_PRODUCT_CODE"
     ] = ""
 
-
-    # ========================================================
-    # 12. Price
-    # ========================================================
 
     output[
         "UNIT_PRICE"
@@ -3674,10 +4114,6 @@ def transform_template_8(uploaded_file):
     ] = pd.NA
 
 
-    # ========================================================
-    # 13. Optional Fields
-    # ========================================================
-
     output[
         "RAW_BRAND"
     ] = ""
@@ -3694,10 +4130,7 @@ def transform_template_8(uploaded_file):
 
 
     # ========================================================
-    # 14. Audit
-    #
-    # 很重要：
-    # 可以看到每筆到底從哪個 sheet / 哪欄抓的
+    # Audit
     # ========================================================
 
     output[
@@ -3719,9 +4152,34 @@ def transform_template_8(uploaded_file):
 
 
     output[
+        "DETECTION_METHOD"
+    ] = (
+        data[
+            "DETECTION_METHOD"
+        ]
+    )
+
+
+    output[
         "SOURCE_PRICE_COLUMN"
     ] = (
         "RSP_FROM_SKU_MAPPING"
+    )
+
+
+    # ========================================================
+    # Save Sheet Log
+    #
+    # optional:
+    # output.attrs can store debug information
+    # ========================================================
+
+    output.attrs[
+        "TEMPLATE_8_SHEET_LOG"
+    ] = (
+        pd.DataFrame(
+            sheet_logs
+        )
     )
 
 
