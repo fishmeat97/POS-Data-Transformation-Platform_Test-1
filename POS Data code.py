@@ -5260,6 +5260,22 @@ def transform_template_13(uploaded_file):
 #
 # ============================================================
 
+# ============================================================
+# TEMPLATE 14
+# 美滿商行
+#
+# Product Code Examples:
+# D001-00-070-001
+# D001-00-070-009
+# D003-05-070-004
+# D006-21-070-001-5
+#
+# Logic:
+# Product Code -> RAW_PRODUCT_CODE
+# Product Name -> RAW_SKU
+# Quantity     -> QTY
+# ============================================================
+
 def transform_template_14(uploaded_file):
 
     meta = parse_filename(
@@ -5289,26 +5305,83 @@ def transform_template_14(uploaded_file):
 
 
     # ========================================================
-    # 2. Product Code Pattern
+    # 2. Product Code Normalizer
     #
-    # Examples:
+    # 解決：
+    # - 一般 -
+    # - 全形 －
+    # - en dash –
+    # - em dash —
+    # - 前後空白
+    # - code 中間空白
+    # ========================================================
+
+    def normalize_product_code(value):
+
+        text = norm_text(
+            value
+        )
+
+        if not text:
+            return ""
+
+        text = (
+            text
+            .replace("－", "-")
+            .replace("–", "-")
+            .replace("—", "-")
+            .replace("−", "-")
+        )
+
+        # remove all whitespace
+        text = re.sub(
+            r"\s+",
+            "",
+            text,
+        )
+
+        return text
+
+
+    # ========================================================
+    # 3. Product Code Extractor
+    #
+    # 比舊版寬鬆：
     #
     # D001-00-070-001
-    # D001-12-100-001
     # D006-21-070-001-5
-    # ========================================================
-
-    product_code_pattern = re.compile(
-        r"^[A-Za-z]\d{3}"
-        r"(?:-\d+){2,}"
-        r"(?:-\d+)?$"
-    )
-
-
-    # ========================================================
-    # 3. Ignore Text
     #
-    # 避免把標題 / 單位 / 合計抓成 SKU
+    # 即使 cell 還有額外文字也能找到
+    # ========================================================
+
+    def extract_product_code(value):
+
+        text = normalize_product_code(
+            value
+        )
+
+        if not text:
+            return None
+
+        match = re.search(
+            r"[A-Za-z]\d{3}"
+            r"(?:-\d+){3,4}",
+            text,
+        )
+
+        if match:
+
+            return (
+                match
+                .group(0)
+                .upper()
+            )
+
+        return None
+
+
+    # ========================================================
+    # 4. Ignore Text
     # ========================================================
 
     ignore_keywords = [
@@ -5326,13 +5399,12 @@ def transform_template_14(uploaded_file):
         "頁次",
         "報表",
         "期間",
-        "庫存",
-        "銷售",
+        "來店客戶",
     ]
 
 
     # ========================================================
-    # 4. Collect Product Rows
+    # 5. Collect Records
     # ========================================================
 
     records = []
@@ -5346,7 +5418,6 @@ def transform_template_14(uploaded_file):
             row_idx
         ]
 
-
         values = [
             norm_text(value)
             for value
@@ -5355,7 +5426,7 @@ def transform_template_14(uploaded_file):
 
 
         # ====================================================
-        # Find Product Code
+        # A. Find Product Code
         # ====================================================
 
         product_code = None
@@ -5366,66 +5437,68 @@ def transform_template_14(uploaded_file):
             values
         ):
 
-            if not value:
-                continue
-
-
-            clean_value = (
+            code = extract_product_code(
                 value
-                .strip()
             )
 
+            if code:
 
-            if product_code_pattern.match(
-                clean_value
-            ):
-
-                product_code = (
-                    clean_value
-                )
-
-                product_code_idx = (
-                    col_idx
-                )
+                product_code = code
+                product_code_idx = col_idx
 
                 break
 
 
-        # 不是商品 row
+        # Not product row
         if product_code is None:
-
             continue
 
 
         # ====================================================
-        # Find SKU
+        # B. Find SKU
         #
-        # 從 Product Code 右邊開始找文字
+        # Priority:
+        # 1. nearest text on RIGHT side of Product Code
+        # 2. next row if SKU is wrapped
         # ====================================================
 
-        sku_candidates = []
+        sku = ""
 
 
-        for col_idx, value in enumerate(
-            values
+        # ----------------------------------------------------
+        # Search same row first
+        # ----------------------------------------------------
+
+        for col_idx in range(
+            product_code_idx + 1,
+            len(values),
         ):
 
-            if not value:
+            value = values[
+                col_idx
+            ]
 
+            if not value:
                 continue
 
 
-            if col_idx == product_code_idx:
+            # -----------------------------------------------
+            # Skip another product code
+            # -----------------------------------------------
+
+            if extract_product_code(
+                value
+            ):
 
                 continue
 
 
             # -----------------------------------------------
-            # 排除純 numeric
+            # Skip obvious numeric
             # -----------------------------------------------
 
             numeric_test = pd.to_numeric(
-                value
+                str(value)
                 .replace(",", ""),
                 errors="coerce",
             )
@@ -5439,18 +5512,7 @@ def transform_template_14(uploaded_file):
 
 
             # -----------------------------------------------
-            # 排除 product code
-            # -----------------------------------------------
-
-            if product_code_pattern.match(
-                value
-            ):
-
-                continue
-
-
-            # -----------------------------------------------
-            # 排除標題類文字
+            # Skip titles
             # -----------------------------------------------
 
             if any(
@@ -5464,93 +5526,23 @@ def transform_template_14(uploaded_file):
 
 
             # -----------------------------------------------
-            # SKU 至少要有一定長度
+            # Valid SKU
             # -----------------------------------------------
 
-            if len(value) < 2:
+            if len(value) >= 2:
 
-                continue
-
-
-            sku_candidates.append(
-                (
-                    col_idx,
-                    value,
-                )
-            )
+                sku = value
+                break
 
 
         # ====================================================
-        # Choose SKU
-        #
-        # 優先 Product Code 右邊最近的文字
-        # ====================================================
-
-        sku = ""
-
-
-        right_side_candidates = [
-            (
-                col_idx,
-                value,
-            )
-            for (
-                col_idx,
-                value,
-            )
-            in sku_candidates
-            if (
-                col_idx
-                >
-                product_code_idx
-            )
-        ]
-
-
-        if right_side_candidates:
-
-            right_side_candidates.sort(
-                key=lambda x:
-                x[0]
-            )
-
-            sku = (
-                right_side_candidates[
-                    0
-                ][1]
-            )
-
-
-        elif sku_candidates:
-
-            # fallback:
-            # 找最長文字
-            sku = max(
-                [
-                    value
-                    for (
-                        _,
-                        value,
-                    )
-                    in sku_candidates
-                ],
-                key=len,
-            )
-
-
-        # ====================================================
-        # 如果這 row 沒找到 SKU
-        #
-        # 嘗試看下一 row
-        # 有些舊報表商品名稱會換行
+        # C. SKU fallback - Next Row
         # ====================================================
 
         if (
             not sku
             and
-            row_idx + 1
-            <
-            len(raw)
+            row_idx + 1 < len(raw)
         ):
 
             next_values = [
@@ -5562,27 +5554,21 @@ def transform_template_14(uploaded_file):
             ]
 
 
-            next_candidates = []
-
-
             for value in next_values:
 
                 if not value:
                     continue
 
 
-                if product_code_pattern.match(
+                if extract_product_code(
                     value
                 ):
-
                     continue
 
 
                 numeric_test = pd.to_numeric(
-                    value.replace(
-                        ",",
-                        "",
-                    ),
+                    str(value)
+                    .replace(",", ""),
                     errors="coerce",
                 )
 
@@ -5590,7 +5576,6 @@ def transform_template_14(uploaded_file):
                 if pd.notna(
                     numeric_test
                 ):
-
                     continue
 
 
@@ -5600,65 +5585,48 @@ def transform_template_14(uploaded_file):
                     for keyword
                     in ignore_keywords
                 ):
-
                     continue
 
 
                 if len(value) >= 2:
 
-                    next_candidates.append(
-                        value
-                    )
-
-
-            if next_candidates:
-
-                sku = max(
-                    next_candidates,
-                    key=len,
-                )
+                    sku = value
+                    break
 
 
         # ====================================================
-        # Find Quantity
+        # D. Find Quantity
         #
-        # 先找 Product Code 右邊 numeric 欄位
+        # Collect numeric cells on RIGHT side
         # ====================================================
 
-        qty_candidates = []
+        numeric_candidates = []
 
 
-        for col_idx, value in enumerate(
-            row.tolist()
+        for col_idx in range(
+            product_code_idx + 1,
+            len(row),
         ):
 
-            if col_idx == product_code_idx:
+            raw_value = row.iloc[
+                col_idx
+            ]
 
-                continue
 
-
-            if pd.isna(value):
-
+            if pd.isna(
+                raw_value
+            ):
                 continue
 
 
             text_value = (
-                str(value)
+                str(raw_value)
                 .strip()
             )
 
 
             # -----------------------------------------------
-            # 排除明顯 %
-            # -----------------------------------------------
-
-            if "%" in text_value:
-
-                continue
-
-
-            # -----------------------------------------------
-            # numeric
+            # Remove common units
             # -----------------------------------------------
 
             cleaned = (
@@ -5667,104 +5635,116 @@ def transform_template_14(uploaded_file):
                 .replace("瓶", "")
                 .replace("支", "")
                 .replace("箱", "")
+                .replace("PCS", "")
+                .replace("pcs", "")
             )
 
 
-            n = pd.to_numeric(
+            # -----------------------------------------------
+            # Ignore percentage
+            # -----------------------------------------------
+
+            if "%" in cleaned:
+                continue
+
+
+            number = pd.to_numeric(
                 cleaned,
                 errors="coerce",
             )
 
 
-            if pd.notna(n):
+            if pd.notna(
+                number
+            ):
 
-                qty_candidates.append(
-                    (
-                        col_idx,
-                        n,
-                    )
+                numeric_candidates.append(
+                    {
+                        "col_idx":
+                            col_idx,
+
+                        "value":
+                            number,
+                    }
                 )
 
 
         # ====================================================
-        # Choose Quantity
+        # E. Quantity
         #
-        # 優先 SKU / Product Code 右邊 numeric
+        # 目前先取最右邊 numeric
         # ====================================================
 
         qty = pd.NA
 
 
-        if qty_candidates:
+        if numeric_candidates:
 
-            right_numeric = [
-                (
-                    col_idx,
-                    value,
-                )
-                for (
-                    col_idx,
-                    value,
-                )
-                in qty_candidates
-                if (
-                    col_idx
-                    >
-                    product_code_idx
-                )
-            ]
-
-
-            if right_numeric:
-
-                # 預設取最右邊 numeric
-                #
-                # 因為這類報表左邊有時可能還有
-                # 序號 / 規格等 numeric
-                qty = (
-                    right_numeric[
-                        -1
-                    ][1]
-                )
+            qty = (
+                numeric_candidates[
+                    -1
+                ][
+                    "value"
+                ]
+            )
 
 
         # ====================================================
-        # Record
+        # F. Add Record
         # ====================================================
 
-        if sku:
+        records.append({
 
-            records.append({
+            "RAW_PRODUCT_CODE":
+                product_code,
 
-                "RAW_PRODUCT_CODE":
-                    product_code,
+            "RAW_SKU":
+                sku,
 
-                "RAW_SKU":
-                    sku,
+            "QTY":
+                qty,
 
-                "QTY":
-                    qty,
+            "SOURCE_ROW":
+                row_idx + 1,
 
-                "SOURCE_ROW":
-                    row_idx + 1,
-
-            })
+        })
 
 
     # ========================================================
-    # 5. Validate Result
+    # 6. Validate
     # ========================================================
 
     if not records:
 
+        # 額外 debug：
+        # 看前 50 rows 實際內容
+        preview_text = []
+
+        for i in range(
+            min(
+                50,
+                len(raw),
+            )
+        ):
+
+            preview_text.append(
+                " | ".join(
+                    norm_text(x)
+                    for x
+                    in raw.iloc[i].tolist()
+                    if norm_text(x)
+                )
+            )
+
+
         raise ValueError(
-            "Template 14 找不到有效商品資料。"
-            "沒有找到符合 Dxxx-xx-xxx-xxx 格式的商品代碼。"
+            "Template 14 找不到商品資料。"
+            "請檢查商品代碼結構。"
         )
 
 
     # ========================================================
-    # 6. To DataFrame
+    # 7. DataFrame
     # ========================================================
 
     data = pd.DataFrame(
@@ -5773,33 +5753,28 @@ def transform_template_14(uploaded_file):
 
 
     # ========================================================
-    # 7. Remove Empty SKU
+    # 8. Remove Empty SKU
+    #
+    # 注意：
+    # 不要直接 drop！
+    #
+    # 先保留，方便我們 Preview 哪些 SKU 沒抓到
     # ========================================================
 
-    data = (
+    data[
+        "RAW_SKU"
+    ] = (
         data[
-            data[
-                "RAW_SKU"
-            ]
-            .map(norm_text)
-            .ne("")
+            "RAW_SKU"
         ]
-        .reset_index(
-            drop=True
+        .map(
+            norm_text
         )
     )
 
 
-    if data.empty:
-
-        raise ValueError(
-            "Template 14 找到商品代碼，"
-            "但沒有成功解析任何 SKU。"
-        )
-
-
     # ========================================================
-    # 8. Build Standard Output
+    # 9. Build Output
     # ========================================================
 
     output = base_records(
@@ -5811,7 +5786,7 @@ def transform_template_14(uploaded_file):
 
 
     # ========================================================
-    # 9. Source
+    # 10. Source
     # ========================================================
 
     output[
@@ -5825,11 +5800,11 @@ def transform_template_14(uploaded_file):
 
     output[
         "SOURCE_SHEET"
-    ] = "Sheet1"
+    ] = "Sheet0"
 
 
     # ========================================================
-    # 10. Customer
+    # 11. Customer
     # ========================================================
 
     output[
@@ -5847,7 +5822,7 @@ def transform_template_14(uploaded_file):
 
 
     # ========================================================
-    # 11. Product
+    # 12. Product Code
     # ========================================================
 
     output[
@@ -5859,20 +5834,21 @@ def transform_template_14(uploaded_file):
     )
 
 
+    # ========================================================
+    # 13. SKU
+    # ========================================================
+
     output[
         "RAW_SKU"
     ] = (
         data[
             "RAW_SKU"
         ]
-        .map(
-            norm_text
-        )
     )
 
 
     # ========================================================
-    # 12. Quantity
+    # 14. Quantity
     # ========================================================
 
     output[
@@ -5886,9 +5862,7 @@ def transform_template_14(uploaded_file):
 
 
     # ========================================================
-    # 13. Price
-    #
-    # Final report uses RSP
+    # 15. Price
     # ========================================================
 
     output[
@@ -5912,7 +5886,7 @@ def transform_template_14(uploaded_file):
 
 
     # ========================================================
-    # 14. Optional
+    # 16. Optional
     # ========================================================
 
     output[
@@ -5931,7 +5905,7 @@ def transform_template_14(uploaded_file):
 
 
     # ========================================================
-    # 15. Audit
+    # 17. Audit
     # ========================================================
 
     output[
@@ -5949,7 +5923,7 @@ def transform_template_14(uploaded_file):
 
 
     # ========================================================
-    # 16. Return
+    # 18. Return
     # ========================================================
 
     return output
