@@ -4166,7 +4166,7 @@ def transform_template_8(
         "RSP_FROM_SKU_MAPPING"
     )
     
-     return output
+return output
 
     # ========================================================
     # Save Sheet Log
