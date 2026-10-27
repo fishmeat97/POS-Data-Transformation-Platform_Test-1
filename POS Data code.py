@@ -3317,6 +3317,45 @@ def transform_template_7(uploaded_file):
 # Final Report 統一使用 SKU Mapping RSP
 # ============================================================
 
+# ============================================================
+# TEMPLATE 8
+# 唯君 / 欣州
+#
+# Different SKU column for each sheet
+# QTY can also be configured per sheet
+# ============================================================
+
+TEMPLATE_8_SHEET_CONFIG = {
+
+    # 請依實際 workbook 修改 SKU_COL
+    "Table 1": {
+        "SKU_COL": 1,   # B
+        "QTY_COL": 9,   # J
+    },
+
+    "Table 2": {
+        "SKU_COL": 1,   # B
+        "QTY_COL": 9,   # J
+    },
+
+    "Table 3": {
+        "SKU_COL": 1,   # B
+        "QTY_COL": 9,   # J
+    },
+
+    "Table 4": {
+        "SKU_COL": 1,   # B
+        "QTY_COL": 9,   # J
+    },
+
+    "Table 5": {
+            "SKU_COL": 2,   # C
+            "QTY_COL": 10,   # K
+        },
+    
+}
+
+
 def transform_template_8(uploaded_file):
 
     # ========================================================
@@ -3341,463 +3380,234 @@ def transform_template_8(uploaded_file):
     )
 
 
-    if not isinstance(
-        sheets,
-        dict,
-    ):
+    if not sheets:
 
         raise ValueError(
-            "Template 8 無法讀取工作表。"
+            "Template 8 找不到任何工作表。"
         )
 
 
-    records = []
-
-
     # ========================================================
-    # 3. Process Every Sheet
+    # 3. Collect Data
     # ========================================================
+
+    frames = []
+
 
     for sheet_name, raw in sheets.items():
 
-        if (
-            raw is None
-            or raw.empty
-        ):
+        if raw is None or raw.empty:
             continue
 
 
-        raw = raw.copy()
-
-
         # ====================================================
-        # 4. Validate Header
-        #
-        # 原始 Header 有大量空格：
-        #
-        # 商  品  條  碼
-        # 商  品  名  稱
-        # 數    量
-        # 銷 貨 金 額
-        #
-        # 所以使用 norm_key 比較
+        # Get Config for Current Sheet
         # ====================================================
 
-        header_values = [
-            norm_key(value)
-            for value
-            in raw.iloc[
-                0
-            ].tolist()
+        config = TEMPLATE_8_SHEET_CONFIG.get(
+            sheet_name
+        )
+
+
+        # ----------------------------------------------------
+        # Sheet 沒設定 → 不直接猜
+        # ----------------------------------------------------
+
+        if config is None:
+
+            continue
+
+
+        sku_col_idx = config[
+            "SKU_COL"
+        ]
+
+        qty_col_idx = config[
+            "QTY_COL"
         ]
 
 
-        header_text = "".join(
-            header_values
+        # ====================================================
+        # Validate Column Count
+        # ====================================================
+
+        required_max_col = max(
+            sku_col_idx,
+            qty_col_idx,
         )
 
 
-        has_barcode_header = (
-            "商品條碼"
-            in header_text
+        if raw.shape[1] <= required_max_col:
+
+            raise ValueError(
+                f"Template 8 Sheet [{sheet_name}] "
+                f"欄位不足。"
+                f"目前 {raw.shape[1]} 欄，"
+                f"但設定需要 index {required_max_col}。"
+            )
+
+
+        # ====================================================
+        # SKU
+        # ====================================================
+
+        raw_sku = (
+            raw.iloc[
+                :,
+                sku_col_idx
+            ]
+            .map(
+                norm_text
+            )
         )
 
 
-        has_amount_header = (
-            "銷貨金額"
-            in header_text
+        # ====================================================
+        # QTY
+        # ====================================================
+
+        qty = numeric(
+            raw.iloc[
+                :,
+                qty_col_idx
+            ]
         )
 
 
-        if not (
-            has_barcode_header
-            and
-            has_amount_header
-        ):
+        # ====================================================
+        # Valid Rows
+        #
+        # SKU must exist
+        # QTY must be numeric
+        # ====================================================
 
+        valid = (
+            raw_sku.ne("")
+            &
+            qty.notna()
+        )
+
+
+        if not valid.any():
             continue
 
 
         # ====================================================
-        # 5. Process Data Rows
+        # Keep Data
         # ====================================================
 
-        for row_idx in range(
-            1,
-            len(raw),
-        ):
+        temp = pd.DataFrame({
 
-            row = raw.iloc[
-                row_idx
-            ]
-
-
-            # -----------------------------------------------
-            # Original values
-            # -----------------------------------------------
-
-            values = row.tolist()
-
-
-            # =================================================
-            # Product Code / Barcode
-            #
-            # First column
-            # =================================================
-
-            raw_product_code = norm_text(
-                values[0]
-                if len(values) > 0
-                else ""
-            )
-
-
-            # =================================================
-            # Collect all non-empty cells
-            # =================================================
-
-            non_empty = []
-
-
-            for col_idx, value in enumerate(
-                values
-            ):
-
-                if (
-                    pd.isna(value)
-                    or
-                    norm_text(value) == ""
-                ):
-
-                    continue
-
-
-                non_empty.append(
-                    (
-                        col_idx,
-                        value,
-                    )
-                )
-
-
-            if len(non_empty) < 2:
-                continue
-
-
-            # =================================================
-            # 6. Sales Amount
-            #
-            # 銷貨金額 = 最右側有效 numeric
-            # =================================================
-
-            numeric_cells = []
-
-
-            for col_idx, value in non_empty:
-
-                numeric_value = pd.to_numeric(
-                    str(value)
-                    .replace(
-                        ",",
-                        "",
-                    )
-                    .strip(),
-                    errors="coerce",
-                )
-
-
-                if pd.notna(
-                    numeric_value
-                ):
-
-                    numeric_cells.append(
-                        (
-                            col_idx,
-                            numeric_value,
-                        )
-                    )
-
-
-            if not numeric_cells:
-                continue
-
-
-            # Right-most numeric = sales amount
-            amount_col_idx, sales_amount = (
-                numeric_cells[
-                    -1
+            "RAW_SKU":
+                raw_sku.loc[
+                    valid
                 ]
-            )
+                .reset_index(
+                    drop=True
+                ),
 
+            "QTY":
+                qty.loc[
+                    valid
+                ]
+                .reset_index(
+                    drop=True
+                ),
 
-            # =================================================
-            # 7. Quantity
-            #
-            # 從銷貨金額往左找
-            # 第一個 numeric
-            #
-            # Example:
-            #
-            # 瓶 | 42 | NaN | 29320
-            #
-            # Quantity = 42
-            # Amount   = 29320
-            # =================================================
-
-            qty_value = pd.NA
-            qty_col_idx = None
-
-
-            numeric_before_amount = [
+            "SOURCE_ROW":
                 (
-                    idx,
-                    value,
-                )
-                for idx, value
-                in numeric_cells
-                if idx < amount_col_idx
-            ]
-
-
-            if numeric_before_amount:
-
-                (
-                    qty_col_idx,
-                    qty_value,
-                ) = (
-                    numeric_before_amount[
-                        -1
+                    raw.index[
+                        valid
                     ]
-                )
+                    + 1
+                ).tolist(),
+
+            "SOURCE_SHEET":
+                sheet_name,
+
+            # audit
+            "SOURCE_SKU_COLUMN":
+                sku_col_idx,
+
+            "SOURCE_QTY_COLUMN":
+                qty_col_idx,
+        })
 
 
-            if pd.isna(
-                qty_value
-            ):
-
-                continue
-
-
-            # =================================================
-            # 8. SKU Name
-            #
-            # 商品名稱位置會因 Sheet 而改變。
-            #
-            # Strategy:
-            #
-            # - 不使用第一欄 Barcode
-            # - 不使用「瓶」
-            # - 不使用純 numeric
-            # - 從剩餘文字欄位選擇最長文字
-            #
-            # 通常最長的文字就是完整商品名稱。
-            # =================================================
-
-            sku_candidates = []
-
-
-            for col_idx, value in non_empty:
-
-                # Barcode column
-                if col_idx == 0:
-                    continue
-
-
-                # 不讀 amount 右邊
-                if col_idx >= amount_col_idx:
-                    continue
-
-
-                text_value = norm_text(
-                    value
-                )
-
-
-                if text_value == "":
-                    continue
-
-
-                # Unit
-                if text_value in [
-                    "瓶",
-                    "支",
-                    "罐",
-                    "盒",
-                    "箱",
-                ]:
-                    continue
-
-
-                # Skip pure numeric
-                numeric_value = pd.to_numeric(
-                    text_value.replace(
-                        ",",
-                        "",
-                    ),
-                    errors="coerce",
-                )
-
-
-                if pd.notna(
-                    numeric_value
-                ):
-                    continue
-
-
-                sku_candidates.append(
-                    text_value
-                )
-
-
-            if not sku_candidates:
-                continue
-
-
-            # 最長文字視為 SKU
-            raw_sku = max(
-                sku_candidates,
-                key=len,
-            )
-
-
-            raw_sku = norm_text(
-                raw_sku
-            )
-
-
-            if raw_sku == "":
-                continue
-
-
-            # =================================================
-            # 9. Save Record
-            # =================================================
-
-            records.append(
-                {
-                    "SOURCE_FILE":
-                        uploaded_file.name,
-
-                    "SOURCE_SHEET":
-                        sheet_name,
-
-                    # Excel actual row
-                    "SOURCE_ROW":
-                        row_idx + 1,
-
-                    "SOURCE_INNER_ROW":
-                        row_idx + 1,
-
-                    "RAW_PRODUCT_CODE":
-                        raw_product_code,
-
-                    "RAW_SKU":
-                        raw_sku,
-
-                    "QTY":
-                        qty_value,
-
-                    "RAW_TOTAL_PRICE":
-                        sales_amount,
-
-                    "RAW_QTY_COLUMN_INDEX":
-                        qty_col_idx,
-
-                    "RAW_AMOUNT_COLUMN_INDEX":
-                        amount_col_idx,
-                }
-            )
+        frames.append(
+            temp
+        )
 
 
     # ========================================================
-    # 10. Validation
+    # 4. Validate
     # ========================================================
 
-    if not records:
+    if not frames:
 
         raise ValueError(
-            "Template 8 找不到有效商品資料。"
+            "Template 8 沒有找到有效資料。"
+            "請確認 TEMPLATE_8_SHEET_CONFIG "
+            "中的 Sheet 名稱 / SKU_COL / QTY_COL。"
         )
 
 
     # ========================================================
-    # 11. Build DataFrame
+    # 5. Combine
     # ========================================================
 
-    data = pd.DataFrame(
-        records
+    data = pd.concat(
+        frames,
+        ignore_index=True,
+        sort=False,
     )
 
 
     # ========================================================
-    # 12. Clean
-    # ========================================================
-
-    data = data[
-        data[
-            "RAW_SKU"
-        ]
-        .map(
-            norm_text
-        )
-        .ne("")
-    ].copy()
-
-
-    data = (
-        data
-        .reset_index(
-            drop=True
-        )
-    )
-
-
-    # ========================================================
-    # 13. Build Standard Output
+    # 6. Build Output
     # ========================================================
 
     output = base_records(
         data,
         meta,
-        "T8_MULTI_SHEET_SALES",
+        "T8_WEIJUN_MULTI_SHEET",
         uploaded_file.name,
     )
 
 
     # ========================================================
-    # 14. Source Information
+    # 7. Source
     # ========================================================
 
     output[
-        "SOURCE_SHEET"
-    ] = data[
-        "SOURCE_SHEET"
-    ].values
+        "SOURCE_ROW"
+    ] = (
+        data[
+            "SOURCE_ROW"
+        ]
+    )
 
 
     output[
-        "SOURCE_ROW"
-    ] = data[
-        "SOURCE_ROW"
-    ].values
-
-
-    output[
-        "SOURCE_INNER_ROW"
-    ] = data[
-        "SOURCE_INNER_ROW"
-    ].values
+        "SOURCE_SHEET"
+    ] = (
+        data[
+            "SOURCE_SHEET"
+        ]
+    )
 
 
     # ========================================================
-    # 15. Customer
+    # 8. Customer
     # ========================================================
 
     output[
         "RAW_CUSTOMER"
-    ] = meta[
-        "FILE_RAWDATA_NAME"
-    ]
+    ] = (
+        meta[
+            "FILE_RAWDATA_NAME"
+        ]
+    )
 
 
     output[
@@ -3806,75 +3616,42 @@ def transform_template_8(uploaded_file):
 
 
     # ========================================================
-    # 16. Product Code / Barcode
-    # ========================================================
-
-    output[
-        "RAW_PRODUCT_CODE"
-    ] = data[
-        "RAW_PRODUCT_CODE"
-    ].values
-
-
-    output[
-        "RAW_BARCODE"
-    ] = data[
-        "RAW_PRODUCT_CODE"
-    ].values
-
-
-    # ========================================================
-    # 17. SKU
+    # 9. SKU
     # ========================================================
 
     output[
         "RAW_SKU"
-    ] = data[
-        "RAW_SKU"
-    ].values
+    ] = (
+        data[
+            "RAW_SKU"
+        ]
+    )
 
 
     # ========================================================
-    # 18. Quantity
+    # 10. QTY
     # ========================================================
 
     output[
         "QTY"
-    ] = pd.to_numeric(
+    ] = (
         data[
             "QTY"
-        ],
-        errors="coerce",
-    ).values
+        ]
+    )
 
 
     # ========================================================
-    # 19. Source Amount
-    #
-    # Audit only
+    # 11. Product Code
     # ========================================================
 
     output[
-        "RAW_TOTAL_PRICE"
-    ] = pd.to_numeric(
-        data[
-            "RAW_TOTAL_PRICE"
-        ],
-        errors="coerce",
-    ).values
+        "RAW_PRODUCT_CODE"
+    ] = ""
 
 
     # ========================================================
-    # 20. Final Price
-    #
-    # IMPORTANT:
-    #
-    # 不使用這份報表的銷貨金額計算 Final Report
-    #
-    # Final:
-    #
-    # 單價 = RSP
-    # 總價 = QTY * RSP
+    # 12. Price
     # ========================================================
 
     output[
@@ -3887,8 +3664,18 @@ def transform_template_8(uploaded_file):
     ] = pd.NA
 
 
+    output[
+        "RAW_UNIT_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "RAW_TOTAL_PRICE"
+    ] = pd.NA
+
+
     # ========================================================
-    # 21. Optional Raw Mapping Fields
+    # 13. Optional Fields
     # ========================================================
 
     output[
@@ -3907,13 +3694,27 @@ def transform_template_8(uploaded_file):
 
 
     # ========================================================
-    # 22. Audit
+    # 14. Audit
+    #
+    # 很重要：
+    # 可以看到每筆到底從哪個 sheet / 哪欄抓的
     # ========================================================
+
+    output[
+        "SOURCE_SKU_COLUMN"
+    ] = (
+        data[
+            "SOURCE_SKU_COLUMN"
+        ]
+    )
+
 
     output[
         "SOURCE_QTY_COLUMN"
     ] = (
-        "DYNAMIC_RIGHTMOST_NUMERIC_BEFORE_AMOUNT"
+        data[
+            "SOURCE_QTY_COLUMN"
+        ]
     )
 
 
@@ -3922,20 +3723,6 @@ def transform_template_8(uploaded_file):
     ] = (
         "RSP_FROM_SKU_MAPPING"
     )
-
-
-    output[
-        "RAW_QTY_COLUMN_INDEX"
-    ] = data[
-        "RAW_QTY_COLUMN_INDEX"
-    ].values
-
-
-    output[
-        "RAW_AMOUNT_COLUMN_INDEX"
-    ] = data[
-        "RAW_AMOUNT_COLUMN_INDEX"
-    ].values
 
 
     return output
