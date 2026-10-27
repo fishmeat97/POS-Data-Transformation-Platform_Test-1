@@ -8407,8 +8407,6 @@ except Exception as e:
 
 
 # ============================================================
-# Load SKU Mapping
-# ============================================================
 # ============================================================
 # Load Multiple SKU Mapping Files
 # ============================================================
@@ -8416,7 +8414,6 @@ except Exception as e:
 try:
 
     sku_frames = []
-
     sku_file_logs = []
 
 
@@ -8435,6 +8432,10 @@ try:
                 preferred_sheet="SKU data",
             )
 
+
+            # =================================================
+            # Validate Read Result
+            # =================================================
 
             if sku_temp is None:
 
@@ -8461,10 +8462,7 @@ try:
 
 
             # =================================================
-            # Record Source File
-            #
-            # 很重要：
-            # 後面如果有 duplicate，可以知道來自哪一份檔案
+            # Copy
             # =================================================
 
             sku_temp = (
@@ -8473,15 +8471,29 @@ try:
             )
 
 
+            # =================================================
+            # Record Source File
+            #
+            # 未來 Duplicate 可以知道來源檔案
+            # =================================================
+
             sku_temp[
                 "SKU_MAPPING_SOURCE_FILE"
             ] = sku_file.name
 
 
+            # =================================================
+            # Add to Merge List
+            # =================================================
+
             sku_frames.append(
                 sku_temp
             )
 
+
+            # =================================================
+            # Success Log
+            # =================================================
 
             sku_file_logs.append({
 
@@ -8504,6 +8516,13 @@ try:
 
         except Exception as file_error:
 
+            # =================================================
+            # Failed File
+            #
+            # 單一 SKU Mapping 失敗，
+            # 不影響其他 Mapping File
+            # =================================================
+
             sku_file_logs.append({
 
                 "檔案":
@@ -8516,26 +8535,48 @@ try:
                     0,
 
                 "錯誤":
-                    f"{type(file_error).__name__}: "
-                    f"{str(file_error)}",
+                    (
+                        f"{type(file_error).__name__}: "
+                        f"{str(file_error)}"
+                    ),
 
             })
 
 
     # ========================================================
+    # Create Upload Log FIRST
+    #
+    # 即使後面 prepare_sku_mapping 失敗，
+    # 還是可以看到每個檔案的讀取結果
+    # ========================================================
+
+    sku_upload_log = pd.DataFrame(
+        sku_file_logs
+    )
+
+
+    # ========================================================
     # Validate
-    # 至少要有一個成功的 SKU Mapping
+    # 至少一個 SKU Mapping File 成功
     # ========================================================
 
     if not sku_frames:
 
-        raise ValueError(
+        st.error(
             "所有 SKU Mapping 檔案都讀取失敗。"
         )
 
+        st.dataframe(
+            sku_upload_log,
+            width="stretch",
+            hide_index=True,
+        )
+
+        st.stop()
+
 
     # ========================================================
-    # Combine All SKU Mapping Files
+    # Combine All Successful SKU Mapping Files
     # ========================================================
 
     sku_raw = pd.concat(
@@ -8548,7 +8589,7 @@ try:
     # ========================================================
     # Prepare SKU Mapping
     #
-    # 後面沿用原本邏輯
+    # 沿用原本 prepare_sku_mapping()
     # ========================================================
 
     (
@@ -8559,26 +8600,37 @@ try:
     )
 
 
-    # ========================================================
-    # SKU Mapping Upload Log
-    # ========================================================
-
-    sku_upload_log = pd.DataFrame(
-        sku_file_logs
-    )
-
-
 except Exception as e:
 
     st.error(
-        f"SKU Mapping 讀取失敗：{e}"
+        f"SKU Mapping 整併 / Mapping Prepare 失敗：{e}"
     )
+
+
+    # ========================================================
+    # Show File-level Log
+    # 即使 prepare_sku_mapping() 失敗也能看到
+    # ========================================================
+
+    if (
+        "sku_upload_log"
+        in locals()
+    ):
+
+        st.dataframe(
+            sku_upload_log,
+            width="stretch",
+            hide_index=True,
+        )
+
 
     st.stop()
 
 
+# ============================================================
+# SKU Mapping Upload Status
+# ============================================================
 
-###
 if (
     "sku_upload_log"
     in locals()
@@ -8596,7 +8648,37 @@ if (
         )
 
 
+        # ====================================================
+        # Summary
+        # ====================================================
 
+        sku_success_count = int(
+            sku_upload_log[
+                "狀態"
+            ]
+            .eq(
+                "SUCCESS"
+            )
+            .sum()
+        )
+
+
+        sku_failed_count = int(
+            sku_upload_log[
+                "狀態"
+            ]
+            .eq(
+                "FAILED"
+            )
+            .sum()
+        )
+
+
+        st.caption(
+            f"成功：{sku_success_count} 個 ｜ "
+            f"失敗：{sku_failed_count} 個 ｜ "
+            f"合併後原始資料：{len(sku_raw):,} 筆"
+        )
 
 
 # ============================================================
