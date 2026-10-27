@@ -5238,8 +5238,26 @@ def transform_template_13(uploaded_file):
 
 
 # ============================================================
+# ============================================================
 # TEMPLATE 14
-# 美滿商行 Grouped Product Report
+# 美滿商行
+#
+# 特殊 XLS Product Detail
+#
+# 判斷方式：
+# 1. 找商品代碼，例如：
+#    D001-00-070-001
+#    D002-12-100-003
+#
+# 2. 商品代碼所在 row：
+#    Product Code -> RAW_PRODUCT_CODE
+#
+# 3. 同一 row 其他文字欄位：
+#    找最合理商品名稱 -> RAW_SKU
+#
+# 4. 同一 row 的 numeric 欄位：
+#    找 QTY
+#
 # ============================================================
 
 def transform_template_14(uploaded_file):
@@ -5247,6 +5265,11 @@ def transform_template_14(uploaded_file):
     meta = parse_filename(
         uploaded_file.name
     )
+
+
+    # ========================================================
+    # 1. Read XLS
+    # ========================================================
 
     uploaded_file.seek(0)
 
@@ -5257,10 +5280,63 @@ def transform_template_14(uploaded_file):
         engine="xlrd",
     )
 
+
+    if raw.empty:
+
+        raise ValueError(
+            "Template 14 檔案沒有資料。"
+        )
+
+
+    # ========================================================
+    # 2. Product Code Pattern
+    #
+    # Examples:
+    #
+    # D001-00-070-001
+    # D001-12-100-001
+    # D006-21-070-001-5
+    # ========================================================
+
+    product_code_pattern = re.compile(
+        r"^[A-Za-z]\d{3}"
+        r"(?:-\d+){2,}"
+        r"(?:-\d+)?$"
+    )
+
+
+    # ========================================================
+    # 3. Ignore Text
+    #
+    # 避免把標題 / 單位 / 合計抓成 SKU
+    # ========================================================
+
+    ignore_keywords = [
+        "產品名稱",
+        "商品名稱",
+        "商品編號",
+        "產品編號",
+        "品號",
+        "單位",
+        "數量",
+        "合計",
+        "總計",
+        "客戶",
+        "日期",
+        "頁次",
+        "報表",
+        "期間",
+        "庫存",
+        "銷售",
+    ]
+
+
+    # ========================================================
+    # 4. Collect Product Rows
+    # ========================================================
+
     records = []
 
-    current_sku = ""
-    current_product_code = ""
 
     for row_idx in range(
         len(raw)
@@ -5270,174 +5346,611 @@ def transform_template_14(uploaded_file):
             row_idx
         ]
 
+
         values = [
-            norm_text(x)
-            for x in row.tolist()
+            norm_text(value)
+            for value
+            in row.tolist()
         ]
 
-        normalized = [
-            norm_key(x)
-            for x in values
-        ]
 
         # ====================================================
-        # Product Name Row
+        # Find Product Code
         # ====================================================
 
-        if any(
-            "產品名稱"
-            in x
-            for x in normalized
+        product_code = None
+        product_code_idx = None
+
+
+        for col_idx, value in enumerate(
+            values
         ):
 
-            text_candidates = []
+            if not value:
+                continue
 
-            code_candidates = []
 
-            for value in values:
+            clean_value = (
+                value
+                .strip()
+            )
 
-                value = norm_text(value)
+
+            if product_code_pattern.match(
+                clean_value
+            ):
+
+                product_code = (
+                    clean_value
+                )
+
+                product_code_idx = (
+                    col_idx
+                )
+
+                break
+
+
+        # 不是商品 row
+        if product_code is None:
+
+            continue
+
+
+        # ====================================================
+        # Find SKU
+        #
+        # 從 Product Code 右邊開始找文字
+        # ====================================================
+
+        sku_candidates = []
+
+
+        for col_idx, value in enumerate(
+            values
+        ):
+
+            if not value:
+
+                continue
+
+
+            if col_idx == product_code_idx:
+
+                continue
+
+
+            # -----------------------------------------------
+            # 排除純 numeric
+            # -----------------------------------------------
+
+            numeric_test = pd.to_numeric(
+                value
+                .replace(",", ""),
+                errors="coerce",
+            )
+
+
+            if pd.notna(
+                numeric_test
+            ):
+
+                continue
+
+
+            # -----------------------------------------------
+            # 排除 product code
+            # -----------------------------------------------
+
+            if product_code_pattern.match(
+                value
+            ):
+
+                continue
+
+
+            # -----------------------------------------------
+            # 排除標題類文字
+            # -----------------------------------------------
+
+            if any(
+                keyword
+                in value
+                for keyword
+                in ignore_keywords
+            ):
+
+                continue
+
+
+            # -----------------------------------------------
+            # SKU 至少要有一定長度
+            # -----------------------------------------------
+
+            if len(value) < 2:
+
+                continue
+
+
+            sku_candidates.append(
+                (
+                    col_idx,
+                    value,
+                )
+            )
+
+
+        # ====================================================
+        # Choose SKU
+        #
+        # 優先 Product Code 右邊最近的文字
+        # ====================================================
+
+        sku = ""
+
+
+        right_side_candidates = [
+            (
+                col_idx,
+                value,
+            )
+            for (
+                col_idx,
+                value,
+            )
+            in sku_candidates
+            if (
+                col_idx
+                >
+                product_code_idx
+            )
+        ]
+
+
+        if right_side_candidates:
+
+            right_side_candidates.sort(
+                key=lambda x:
+                x[0]
+            )
+
+            sku = (
+                right_side_candidates[
+                    0
+                ][1]
+            )
+
+
+        elif sku_candidates:
+
+            # fallback:
+            # 找最長文字
+            sku = max(
+                [
+                    value
+                    for (
+                        _,
+                        value,
+                    )
+                    in sku_candidates
+                ],
+                key=len,
+            )
+
+
+        # ====================================================
+        # 如果這 row 沒找到 SKU
+        #
+        # 嘗試看下一 row
+        # 有些舊報表商品名稱會換行
+        # ====================================================
+
+        if (
+            not sku
+            and
+            row_idx + 1
+            <
+            len(raw)
+        ):
+
+            next_values = [
+                norm_text(value)
+                for value
+                in raw.iloc[
+                    row_idx + 1
+                ].tolist()
+            ]
+
+
+            next_candidates = []
+
+
+            for value in next_values:
 
                 if not value:
                     continue
 
-                if "產品名稱" in norm_key(value):
-                    continue
 
-                if re.match(
-                    r"^[A-Za-z]\d{3}",
-                    value,
+                if product_code_pattern.match(
+                    value
                 ):
 
-                    code_candidates.append(
-                        value
-                    )
+                    continue
 
-                else:
 
-                    text_candidates.append(
-                        value
-                    )
-
-            if code_candidates:
-
-                current_product_code = (
-                    code_candidates[0]
-                )
-
-            if text_candidates:
-
-                current_sku = max(
-                    text_candidates,
-                    key=len,
-                )
-
-            continue
-
-        # ====================================================
-        # Total Row
-        # ====================================================
-
-        if any(
-            "合計"
-            in x
-            for x in normalized
-        ):
-
-            numeric_values = []
-
-            for value in values:
-
-                n = pd.to_numeric(
-                    str(value)
-                    .replace(",", ""),
+                numeric_test = pd.to_numeric(
+                    value.replace(
+                        ",",
+                        "",
+                    ),
                     errors="coerce",
                 )
 
-                if pd.notna(n):
 
-                    numeric_values.append(
-                        n
+                if pd.notna(
+                    numeric_test
+                ):
+
+                    continue
+
+
+                if any(
+                    keyword
+                    in value
+                    for keyword
+                    in ignore_keywords
+                ):
+
+                    continue
+
+
+                if len(value) >= 2:
+
+                    next_candidates.append(
+                        value
                     )
 
-            if (
-                current_sku
-                and
-                numeric_values
-            ):
 
-                records.append({
-                    "RAW_PRODUCT_CODE":
-                        current_product_code,
+            if next_candidates:
 
-                    "RAW_SKU":
-                        current_sku,
+                sku = max(
+                    next_candidates,
+                    key=len,
+                )
 
-                    "QTY":
-                        numeric_values[-1],
 
-                    "SOURCE_ROW":
-                        row_idx + 1,
-                })
+        # ====================================================
+        # Find Quantity
+        #
+        # 先找 Product Code 右邊 numeric 欄位
+        # ====================================================
 
-            current_sku = ""
-            current_product_code = ""
+        qty_candidates = []
+
+
+        for col_idx, value in enumerate(
+            row.tolist()
+        ):
+
+            if col_idx == product_code_idx:
+
+                continue
+
+
+            if pd.isna(value):
+
+                continue
+
+
+            text_value = (
+                str(value)
+                .strip()
+            )
+
+
+            # -----------------------------------------------
+            # 排除明顯 %
+            # -----------------------------------------------
+
+            if "%" in text_value:
+
+                continue
+
+
+            # -----------------------------------------------
+            # numeric
+            # -----------------------------------------------
+
+            cleaned = (
+                text_value
+                .replace(",", "")
+                .replace("瓶", "")
+                .replace("支", "")
+                .replace("箱", "")
+            )
+
+
+            n = pd.to_numeric(
+                cleaned,
+                errors="coerce",
+            )
+
+
+            if pd.notna(n):
+
+                qty_candidates.append(
+                    (
+                        col_idx,
+                        n,
+                    )
+                )
+
+
+        # ====================================================
+        # Choose Quantity
+        #
+        # 優先 SKU / Product Code 右邊 numeric
+        # ====================================================
+
+        qty = pd.NA
+
+
+        if qty_candidates:
+
+            right_numeric = [
+                (
+                    col_idx,
+                    value,
+                )
+                for (
+                    col_idx,
+                    value,
+                )
+                in qty_candidates
+                if (
+                    col_idx
+                    >
+                    product_code_idx
+                )
+            ]
+
+
+            if right_numeric:
+
+                # 預設取最右邊 numeric
+                #
+                # 因為這類報表左邊有時可能還有
+                # 序號 / 規格等 numeric
+                qty = (
+                    right_numeric[
+                        -1
+                    ][1]
+                )
+
+
+        # ====================================================
+        # Record
+        # ====================================================
+
+        if sku:
+
+            records.append({
+
+                "RAW_PRODUCT_CODE":
+                    product_code,
+
+                "RAW_SKU":
+                    sku,
+
+                "QTY":
+                    qty,
+
+                "SOURCE_ROW":
+                    row_idx + 1,
+
+            })
+
+
+    # ========================================================
+    # 5. Validate Result
+    # ========================================================
 
     if not records:
 
         raise ValueError(
-            "Template 14 找不到有效「產品名稱 / 合計」區塊。"
+            "Template 14 找不到有效商品資料。"
+            "沒有找到符合 Dxxx-xx-xxx-xxx 格式的商品代碼。"
         )
+
+
+    # ========================================================
+    # 6. To DataFrame
+    # ========================================================
 
     data = pd.DataFrame(
         records
     )
 
+
+    # ========================================================
+    # 7. Remove Empty SKU
+    # ========================================================
+
+    data = (
+        data[
+            data[
+                "RAW_SKU"
+            ]
+            .map(norm_text)
+            .ne("")
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    if data.empty:
+
+        raise ValueError(
+            "Template 14 找到商品代碼，"
+            "但沒有成功解析任何 SKU。"
+        )
+
+
+    # ========================================================
+    # 8. Build Standard Output
+    # ========================================================
+
     output = base_records(
         data,
         meta,
-        "T14_GROUPED_PRODUCT_REPORT",
+        "T14_MEIMAN_PRODUCT_DETAIL",
         uploaded_file.name,
     )
 
-    output["SOURCE_ROW"] = (
-        data["SOURCE_ROW"]
+
+    # ========================================================
+    # 9. Source
+    # ========================================================
+
+    output[
+        "SOURCE_ROW"
+    ] = (
+        data[
+            "SOURCE_ROW"
+        ]
     )
 
-    output["SOURCE_SHEET"] = "Sheet1"
 
-    output["RAW_CUSTOMER"] = (
-        meta["FILE_RAWDATA_NAME"]
+    output[
+        "SOURCE_SHEET"
+    ] = "Sheet1"
+
+
+    # ========================================================
+    # 10. Customer
+    # ========================================================
+
+    output[
+        "RAW_CUSTOMER"
+    ] = (
+        meta[
+            "FILE_RAWDATA_NAME"
+        ]
     )
 
-    output["RAW_ROW_CUSTOMER"] = ""
 
-    output["RAW_PRODUCT_CODE"] = (
-        data["RAW_PRODUCT_CODE"]
+    output[
+        "RAW_ROW_CUSTOMER"
+    ] = ""
+
+
+    # ========================================================
+    # 11. Product
+    # ========================================================
+
+    output[
+        "RAW_PRODUCT_CODE"
+    ] = (
+        data[
+            "RAW_PRODUCT_CODE"
+        ]
     )
 
-    output["RAW_SKU"] = (
-        data["RAW_SKU"]
+
+    output[
+        "RAW_SKU"
+    ] = (
+        data[
+            "RAW_SKU"
+        ]
+        .map(
+            norm_text
+        )
     )
 
-    output["QTY"] = (
-        data["QTY"]
+
+    # ========================================================
+    # 12. Quantity
+    # ========================================================
+
+    output[
+        "QTY"
+    ] = pd.to_numeric(
+        data[
+            "QTY"
+        ],
+        errors="coerce",
     )
 
-    output["UNIT_PRICE"] = pd.NA
-    output["TOTAL_PRICE"] = pd.NA
 
-    output["RAW_BRAND"] = ""
-    output["RAW_SIZE"] = ""
-    output["RAW_CATEGORY"] = ""
+    # ========================================================
+    # 13. Price
+    #
+    # Final report uses RSP
+    # ========================================================
 
-    output["SOURCE_QTY_COLUMN"] = (
-        "合計"
+    output[
+        "UNIT_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "TOTAL_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "RAW_UNIT_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "RAW_TOTAL_PRICE"
+    ] = pd.NA
+
+
+    # ========================================================
+    # 14. Optional
+    # ========================================================
+
+    output[
+        "RAW_BRAND"
+    ] = ""
+
+
+    output[
+        "RAW_SIZE"
+    ] = ""
+
+
+    output[
+        "RAW_CATEGORY"
+    ] = ""
+
+
+    # ========================================================
+    # 15. Audit
+    # ========================================================
+
+    output[
+        "SOURCE_QTY_COLUMN"
+    ] = (
+        "AUTO_DETECTED_NUMERIC"
     )
 
-    output["SOURCE_PRICE_COLUMN"] = (
+
+    output[
+        "SOURCE_PRICE_COLUMN"
+    ] = (
         "RSP_FROM_SKU_MAPPING"
     )
+
+
+    # ========================================================
+    # 16. Return
+    # ========================================================
 
     return output
 
