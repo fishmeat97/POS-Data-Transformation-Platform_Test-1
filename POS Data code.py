@@ -8428,13 +8428,13 @@ def build_report(detail):
 
     report["店家編號"] = safe_column(
         detail,
-        "Outlet No",
+        "FILE_OUTLET_NO",
     )
 
 
     report["店家名稱"] = safe_column(
         detail,
-        "Outlet NAME",
+        "FILE_RAWDATA_NAME",
     )
 
 
