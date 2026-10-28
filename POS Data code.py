@@ -3045,9 +3045,9 @@ def transform_template_7(uploaded_file):
     )
 
 
-    # ========================================================
-    # 8. Keep Valid Product Rows
-    # ========================================================
+   # ========================================================
+# 8. Keep Valid Product Rows
+# ========================================================
 
     valid = (
         raw_sku
@@ -3055,22 +3055,65 @@ def transform_template_7(uploaded_file):
     )
 
 
+# ========================================================
+# 駱北 ONLY
+# 只保留「單位 = 瓶」
+# ========================================================
+
+    filename_text = norm_text(
+        Path(
+            uploaded_file.name
+        ).stem
+    )
+    
+    
+    if "駱北" in filename_text:
+    
+        unit_col = first_matching_column(
+            df,
+            [
+                "單位",
+                "Unit",
+            ],
+        )
+    
+    
+        if unit_col is None:
+    
+            raise ValueError(
+                "Template 7｜駱北 找不到「單位」欄位。"
+            )
+    
+    
+        valid = (
+            valid
+            &
+            df[unit_col]
+            .map(norm_text)
+            .eq("瓶")
+        )
+    
+    
+    # ========================================================
+    # Apply Filter
+    # ========================================================
+    
     df = (
         df.loc[
             valid
         ]
         .reset_index(drop=True)
     )
-
-
+    
+    
     raw_sku = (
         raw_sku.loc[
             valid
         ]
         .reset_index(drop=True)
     )
-
-
+    
+    
     qty = (
         qty.loc[
             valid
