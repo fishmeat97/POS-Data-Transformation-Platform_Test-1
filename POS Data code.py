@@ -3624,10 +3624,7 @@ def transform_template_8(uploaded_file):
 
         unit_values = {
             "瓶",
-            "罐",
-            "支",
-            "箱",
-            "盒",
+    
         }
 
 
