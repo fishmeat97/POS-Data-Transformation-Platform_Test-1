@@ -8434,7 +8434,7 @@ def build_report(detail):
 
     report["店家名稱"] = safe_column(
         detail,
-        "FILE_RAWDATA_NAME",
+        "Outlet NAME",
     )
 
 
