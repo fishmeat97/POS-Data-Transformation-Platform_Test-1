@@ -3045,21 +3045,21 @@ def transform_template_7(uploaded_file):
     )
 
 
-   # ========================================================
-# 8. Keep Valid Product Rows
 # ========================================================
-
+    # 8. Keep Valid Product Rows
+    # ========================================================
+    
     valid = (
         raw_sku
         .ne("")
     )
-
-
-# ========================================================
-# 駱北 ONLY
-# 只保留「單位 = 瓶」
-# ========================================================
-
+    
+    
+    # ========================================================
+    # 駱北 / 全億 ONLY
+    # 只保留「單位 = 瓶 / 盒」
+    # ========================================================
+    
     filename_text = norm_text(
         Path(
             uploaded_file.name
@@ -3067,7 +3067,11 @@ def transform_template_7(uploaded_file):
     )
     
     
-    if "駱北" in filename_text:
+    if (
+        "駱北" in filename_text
+        or
+        "全億" in filename_text
+    ):
     
         unit_col = first_matching_column(
             df,
@@ -3081,7 +3085,8 @@ def transform_template_7(uploaded_file):
         if unit_col is None:
     
             raise ValueError(
-                "Template 7｜駱北 找不到「單位」欄位。"
+                "Template 7｜駱北 / 全億 "
+                "找不到「單位」欄位。"
             )
     
     
@@ -3090,7 +3095,12 @@ def transform_template_7(uploaded_file):
             &
             df[unit_col]
             .map(norm_text)
-            .eq("瓶")
+            .isin(
+                [
+                    "瓶",
+                    "盒",
+                ]
+            )
         )
     
     
