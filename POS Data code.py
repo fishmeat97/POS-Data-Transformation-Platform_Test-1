@@ -3099,6 +3099,7 @@ def transform_template_7(uploaded_file):
                 [
                     "瓶",
                     "盒",
+                    "組",
                 ]
             )
         )
