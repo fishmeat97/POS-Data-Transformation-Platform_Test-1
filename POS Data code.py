@@ -6438,35 +6438,35 @@ def detect_template_type(uploaded_file):
 
 
     # =================================================
-    # CSV Generic Header Search
-    #
-    # 不直接 header=0，
-    # 因為 header 不一定是第一列
-    # =================================================
+            # CSV Generic Header Search
+            #
+            # 不直接 header=0，
+            # 因為 header 不一定是第一列
+            # =================================================
 
-        template_7_header_row = (
-            find_header_row(
-                raw_csv,
-                required_fields=[
-                    "SKU",
-                    "QTY",
-                ],
-                max_rows=30,
+            template_7_header_row = (
+                find_header_row(
+                    raw_csv,
+                    required_fields=[
+                        "SKU",
+                        "QTY",
+                    ],
+                    max_rows=30,
+                )
             )
-        )
-    
-    
-        if (
-            template_7_header_row
-            is not None
-        ):
-    
-            return "TEMPLATE_7"
-    
-    
-    except Exception:
-    
-        pass
+
+
+            if (
+                template_7_header_row
+                is not None
+            ):
+
+                return "TEMPLATE_7"
+
+
+        except Exception:
+
+            pass
 
 
         # ====================================================
