@@ -5326,204 +5326,342 @@ def transform_template_12(uploaded_file):
     return output
     
 # ============================================================
-# ============================================================
 # TEMPLATE 13
-# 橡木桶總公司
+# 橡木桶
 #
-# CSV Structure:
-# A = NO.
-# B = 品名
-# C = unused
-# D = 銷量
+# Logic:
+# - Product Code = Column A
+# - SKU          = Column B
+# - QTY          = Current month column
+#
+# Example:
+# filename period = 202609
+# → target month = SEP
+# → QTY = SEP column
 # ============================================================
 
 def transform_template_13(uploaded_file):
+
+    # ========================================================
+    # 1. Parse Filename
+    # ========================================================
 
     meta = parse_filename(
         uploaded_file.name
     )
 
+
+    # ========================================================
+    # 2. Get Target Month From Filename
+    # ========================================================
+
+    month_map = {
+        1: "JAN",
+        2: "FEB",
+        3: "MAR",
+        4: "APR",
+        5: "MAY",
+        6: "JUN",
+        7: "JUL",
+        8: "AUG",
+        9: "SEP",
+        10: "OCT",
+        11: "NOV",
+        12: "DEC",
+    }
+
+
+    target_month = pd.to_numeric(
+        meta.get(
+            "MONTH"
+        ),
+        errors="coerce",
+    )
+
+
+    if pd.isna(
+        target_month
+    ):
+
+        raise ValueError(
+            "Template 13｜橡木桶 "
+            "無法從檔名取得月份。"
+        )
+
+
+    target_month = int(
+        target_month
+    )
+
+
+    if (
+        target_month
+        not in month_map
+    ):
+
+        raise ValueError(
+            "Template 13｜橡木桶 "
+            f"月份不正確：{target_month}"
+        )
+
+
+    target_month_col = (
+        month_map[
+            target_month
+        ]
+    )
+
+
+    # ========================================================
+    # 3. Read Excel Raw
+    # ========================================================
+
     uploaded_file.seek(0)
 
-    raw = read_csv_flexible(
+    raw = pd.read_excel(
         uploaded_file,
+        sheet_name=0,
         header=None,
     )
 
+
     if raw.empty:
+
         raise ValueError(
-            "Template 13｜橡木桶 檔案沒有資料。"
+            "Template 13｜橡木桶 "
+            "檔案沒有資料。"
         )
 
+
     # ========================================================
-    # Find Header Row
-    # Must contain:
-    # NO.
-    # 品名
-    # 銷量
+    # 4. Find Header Row
+    #
+    # Look for:
+    # JAN / FEB / ... / DEC
+    #
+    # Example actual row:
+    #
+    # NO. | in | | JAN | FEB | ... | SEP | ...
     # ========================================================
 
     header_row = None
 
+
+    month_headers = {
+        "JAN",
+        "FEB",
+        "MAR",
+        "APR",
+        "MAY",
+        "JUN",
+        "JUL",
+        "AUG",
+        "SEP",
+        "OCT",
+        "NOV",
+        "DEC",
+    }
+
+
     for i in range(
         min(
-            20,
+            30,
             len(raw),
         )
     ):
 
         values = [
-            norm_text(x)
-            for x
-            in raw.iloc[i].tolist()
+            norm_text(value)
+            .upper()
+
+            for value
+            in raw.iloc[
+                i
+            ].tolist()
         ]
 
+
+        found_months = (
+            month_headers
+            .intersection(
+                set(values)
+            )
+        )
+
+
+        # 至少找到 6 個月份欄位
+        # 才認為這列是 month header
         if (
-            "NO." in values
-            and
-            "品名" in values
-            and
-            "銷量" in values
+            len(
+                found_months
+            )
+            >= 6
         ):
 
             header_row = i
+
             break
 
-    if header_row is None:
+
+    if (
+        header_row
+        is None
+    ):
 
         raise ValueError(
-            "Template 13｜橡木桶 找不到 "
-            "NO. / 品名 / 銷量 Header。"
+            "Template 13｜橡木桶 "
+            "找不到 JAN～DEC 月份 Header。"
         )
 
+
     # ========================================================
-    # Read Data After Header
+    # 5. Get Header Values
     # ========================================================
 
-    uploaded_file.seek(0)
+    headers = [
+        norm_text(value)
+        .upper()
 
-    df = read_csv_flexible(
-        uploaded_file,
-        header=header_row,
-    )
-
-    df.columns = [
-        norm_text(c)
-        for c in df.columns
+        for value
+        in raw.iloc[
+            header_row
+        ].tolist()
     ]
 
-    df = (
-        df
-        .dropna(
-            how="all"
+
+    # ========================================================
+    # 6. Find Target Month Column Index
+    # ========================================================
+
+    try:
+
+        qty_col_idx = (
+            headers.index(
+                target_month_col
+            )
         )
+
+    except ValueError:
+
+        raise ValueError(
+            "Template 13｜橡木桶 "
+            f"找不到當月份欄位："
+            f"{target_month_col}"
+        )
+
+
+    # ========================================================
+    # 7. Data Starts After Header
+    # ========================================================
+
+    df = (
+        raw.iloc[
+            header_row + 1:
+        ]
+        .copy()
         .reset_index(
             drop=True
         )
     )
 
-    # ========================================================
-    # Find Columns
-    # ========================================================
-
-    product_code_col = first_matching_column(
-        df,
-        [
-            "NO.",
-            "NO",
-        ],
-    )
-
-    sku_col = first_matching_column(
-        df,
-        [
-            "品名",
-        ],
-    )
-
-    qty_col = first_matching_column(
-        df,
-        [
-            "銷量",
-        ],
-    )
-
-    if (
-        product_code_col is None
-        or
-        sku_col is None
-        or
-        qty_col is None
-    ):
-
-        raise ValueError(
-            "Template 13｜橡木桶 "
-            f"欄位辨識失敗："
-            f"ProductCode={product_code_col}, "
-            f"SKU={sku_col}, "
-            f"QTY={qty_col}"
-        )
 
     # ========================================================
-    # Clean Source Values
+    # 8. Fixed Product Columns
+    #
+    # Column A = Product Code
+    # Column B = SKU
     # ========================================================
 
     raw_product_code = (
-        df[
-            product_code_col
+        df.iloc[
+            :,
+            0
         ]
         .map(
             norm_text
         )
     )
+
 
     raw_sku = (
-        df[
-            sku_col
+        df.iloc[
+            :,
+            1
         ]
         .map(
             norm_text
         )
     )
 
+
     qty = numeric(
-        df[
-            qty_col
+        df.iloc[
+            :,
+            qty_col_idx
         ]
     )
 
+
     # ========================================================
-    # Valid Product Rows
+    # 9. Valid Product Rows
     #
     # Keep:
-    # - product code exists
+    # - Product Code exists
     # - SKU exists
-    # - QTY numeric
+    # - QTY is numeric
     #
     # Remove:
-    # - header-like rows
+    # - Bootles
     # - TOTAL
+    # - blank rows
     # ========================================================
 
     valid = (
-        raw_product_code.ne("")
+        raw_product_code
+        .ne("")
         &
-        raw_sku.ne("")
+        raw_sku
+        .ne("")
         &
-        qty.notna()
-        &
-        ~raw_product_code
-        .str.upper()
-        .str.startswith(
-            "TOTAL"
-        )
-        &
-        ~raw_product_code
-        .str.upper()
-        .eq(
-            "NO."
-        )
+        qty
+        .notna()
     )
+
+
+    # Remove non-product rows
+    invalid_keywords = [
+        "BOOTLES",
+        "BOTTLES",
+        "TOTAL",
+        "NO.",
+    ]
+
+
+    product_code_upper = (
+        raw_product_code
+        .str
+        .upper()
+    )
+
+
+    for keyword in (
+        invalid_keywords
+    ):
+
+        valid = (
+            valid
+            &
+            ~product_code_upper
+            .str
+            .startswith(
+                keyword
+            )
+        )
+
+
+    # ========================================================
+    # 10. Apply Filter
+    # ========================================================
 
     df = (
         df.loc[
@@ -5534,6 +5672,7 @@ def transform_template_13(uploaded_file):
         )
     )
 
+
     raw_product_code = (
         raw_product_code.loc[
             valid
@@ -5542,6 +5681,7 @@ def transform_template_13(uploaded_file):
             drop=True
         )
     )
+
 
     raw_sku = (
         raw_sku.loc[
@@ -5552,6 +5692,7 @@ def transform_template_13(uploaded_file):
         )
     )
 
+
     qty = (
         qty.loc[
             valid
@@ -5561,8 +5702,9 @@ def transform_template_13(uploaded_file):
         )
     )
 
+
     # ========================================================
-    # Build Output
+    # 11. Build Output
     # ========================================================
 
     output = base_records(
@@ -5572,6 +5714,7 @@ def transform_template_13(uploaded_file):
         uploaded_file.name,
     )
 
+
     output[
         "RAW_CUSTOMER"
     ] = (
@@ -5580,9 +5723,11 @@ def transform_template_13(uploaded_file):
         ]
     )
 
+
     output[
         "RAW_ROW_CUSTOMER"
     ] = ""
+
 
     output[
         "RAW_PRODUCT_CODE"
@@ -5590,11 +5735,13 @@ def transform_template_13(uploaded_file):
         raw_product_code
     )
 
+
     output[
         "RAW_SKU"
     ] = (
         raw_sku
     )
+
 
     output[
         "QTY"
@@ -5602,44 +5749,65 @@ def transform_template_13(uploaded_file):
         qty
     )
 
-    # Final price still uses SKU Mapping RSP
+
+    # ========================================================
+    # 12. Price
+    #
+    # Final Report uses SKU Mapping RSP
+    # ========================================================
+
     output[
         "UNIT_PRICE"
     ] = pd.NA
+
 
     output[
         "TOTAL_PRICE"
     ] = pd.NA
 
+
     output[
         "RAW_UNIT_PRICE"
     ] = pd.NA
+
 
     output[
         "RAW_TOTAL_PRICE"
     ] = pd.NA
 
+
     output[
         "RAW_BRAND"
     ] = ""
+
 
     output[
         "RAW_SIZE"
     ] = ""
 
+
     output[
         "RAW_CATEGORY"
     ] = ""
 
+
+    # ========================================================
+    # 13. Audit Information
+    # ========================================================
+
     output[
         "SOURCE_QTY_COLUMN"
-    ] = "銷量"
+    ] = (
+        target_month_col
+    )
+
 
     output[
         "SOURCE_PRICE_COLUMN"
     ] = (
         "RSP_FROM_SKU_MAPPING"
     )
+
 
     return output
 
