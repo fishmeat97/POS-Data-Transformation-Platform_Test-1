@@ -6997,21 +6997,22 @@ def detect_template_type(uploaded_file):
         pass
 
 
-# ========================================================    
-### TEMPLATE 13
 
-        filename_text = norm_text(
-            Path(
-                uploaded_file.name
-            ).stem
-        )
-        
+       # ========================================================
+    # TEMPLATE 13
+    # 橡木桶
+    #
+    # 一定要放在 CSV generic detection 前面
+    # ========================================================
+
         if (
+            suffix == ".csv"
+            and
             "橡木桶" in filename_text
         ):
-        
+    
             return "TEMPLATE_13"
-        
+            
             
 
 
@@ -7402,21 +7403,20 @@ def auto_transform_template(uploaded_file):
             result,
             "Template 12｜POS 公版無 QTY Header",
         )
-    
+
     
     elif template_type == "TEMPLATE_13":
-    
-        uploaded_file.seek(0)
-    
-        result = transform_template_13(
-            uploaded_file
-        )
-    
-        return (
-            result,
-            "Template 13｜橡木桶月份實銷",
-        )
-    
+
+    uploaded_file.seek(0)
+
+    result = transform_template_13(
+        uploaded_file
+    )
+
+    return (
+        result,
+        "Template 13｜橡木桶",
+    )
     
     elif template_type == "TEMPLATE_14":
     
