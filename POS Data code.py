@@ -7407,16 +7407,16 @@ def auto_transform_template(uploaded_file):
     
     elif template_type == "TEMPLATE_13":
 
-    uploaded_file.seek(0)
-
-    result = transform_template_13(
-        uploaded_file
-    )
-
-    return (
-        result,
-        "Template 13｜橡木桶",
-    )
+        uploaded_file.seek(0)
+    
+        result = transform_template_13(
+            uploaded_file
+        )
+    
+        return (
+            result,
+            "Template 13｜橡木桶",
+        )
     
     elif template_type == "TEMPLATE_14":
     
