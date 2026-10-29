@@ -5326,8 +5326,15 @@ def transform_template_12(uploaded_file):
     return output
     
 # ============================================================
+# ============================================================
 # TEMPLATE 13
-# 橡木桶 Monthly Horizontal Report
+# 橡木桶總公司
+#
+# CSV Structure:
+# A = NO.
+# B = 品名
+# C = unused
+# D = 銷量
 # ============================================================
 
 def transform_template_13(uploaded_file):
@@ -5338,182 +5345,303 @@ def transform_template_13(uploaded_file):
 
     uploaded_file.seek(0)
 
-    raw = pd.read_excel(
+    raw = read_csv_flexible(
         uploaded_file,
-        sheet_name=0,
         header=None,
     )
 
-    # ========================================================
-    # Month from filename
-    # ========================================================
-
-    month_number = int(
-        meta["MONTH"]
-    )
-
-    month_map = {
-        1: "JAN",
-        2: "FEB",
-        3: "MAR",
-        4: "APR",
-        5: "MAY",
-        6: "JUN",
-        7: "JUL",
-        8: "AUG",
-        9: "SEP",
-        10: "OCT",
-        11: "NOV",
-        12: "DEC",
-    }
-
-    target_month = month_map[
-        month_number
-    ]
+    if raw.empty:
+        raise ValueError(
+            "Template 13｜橡木桶 檔案沒有資料。"
+        )
 
     # ========================================================
-    # Find month header row
+    # Find Header Row
+    # Must contain:
+    # NO.
+    # 品名
+    # 銷量
     # ========================================================
 
     header_row = None
-    qty_col_idx = None
 
     for i in range(
-        min(20, len(raw))
+        min(
+            20,
+            len(raw),
+        )
     ):
 
         values = [
-            norm_text(x).upper()
+            norm_text(x)
             for x
             in raw.iloc[i].tolist()
         ]
 
-        if target_month in values:
+        if (
+            "NO." in values
+            and
+            "品名" in values
+            and
+            "銷量" in values
+        ):
 
             header_row = i
-
-            qty_col_idx = (
-                values.index(
-                    target_month
-                )
-            )
-
             break
 
     if header_row is None:
 
         raise ValueError(
-            f"Template 13 找不到月份欄位：{target_month}"
+            "Template 13｜橡木桶 找不到 "
+            "NO. / 品名 / 銷量 Header。"
         )
 
     # ========================================================
-    # Data:
-    # Column A = Product Code
-    # Column B = SKU
+    # Read Data After Header
     # ========================================================
 
-    product_code = (
-        raw.iloc[
-            header_row + 1:,
-            0
+    uploaded_file.seek(0)
+
+    df = read_csv_flexible(
+        uploaded_file,
+        header=header_row,
+    )
+
+    df.columns = [
+        norm_text(c)
+        for c in df.columns
+    ]
+
+    df = (
+        df
+        .dropna(
+            how="all"
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+    # ========================================================
+    # Find Columns
+    # ========================================================
+
+    product_code_col = first_matching_column(
+        df,
+        [
+            "NO.",
+            "NO",
+        ],
+    )
+
+    sku_col = first_matching_column(
+        df,
+        [
+            "品名",
+        ],
+    )
+
+    qty_col = first_matching_column(
+        df,
+        [
+            "銷量",
+        ],
+    )
+
+    if (
+        product_code_col is None
+        or
+        sku_col is None
+        or
+        qty_col is None
+    ):
+
+        raise ValueError(
+            "Template 13｜橡木桶 "
+            f"欄位辨識失敗："
+            f"ProductCode={product_code_col}, "
+            f"SKU={sku_col}, "
+            f"QTY={qty_col}"
+        )
+
+    # ========================================================
+    # Clean Source Values
+    # ========================================================
+
+    raw_product_code = (
+        df[
+            product_code_col
         ]
-        .map(norm_text)
-        .reset_index(drop=True)
+        .map(
+            norm_text
+        )
     )
 
     raw_sku = (
-        raw.iloc[
-            header_row + 1:,
-            1
+        df[
+            sku_col
         ]
-        .map(norm_text)
-        .reset_index(drop=True)
+        .map(
+            norm_text
+        )
     )
 
     qty = numeric(
-        raw.iloc[
-            header_row + 1:,
-            qty_col_idx
+        df[
+            qty_col
         ]
-        .reset_index(drop=True)
     )
 
-    data = pd.DataFrame({
-        "RAW_PRODUCT_CODE":
-            product_code,
+    # ========================================================
+    # Valid Product Rows
+    #
+    # Keep:
+    # - product code exists
+    # - SKU exists
+    # - QTY numeric
+    #
+    # Remove:
+    # - header-like rows
+    # - TOTAL
+    # ========================================================
 
-        "RAW_SKU":
-            raw_sku,
-
-        "QTY":
-            qty,
-    })
-
-    # Remove TOTAL / empty rows
     valid = (
-        data["RAW_SKU"].ne("")
+        raw_product_code.ne("")
         &
-        ~data[
-            "RAW_PRODUCT_CODE"
-        ]
+        raw_sku.ne("")
+        &
+        qty.notna()
+        &
+        ~raw_product_code
         .str.upper()
-        .eq("TOTAL:")
+        .str.startswith(
+            "TOTAL"
+        )
+        &
+        ~raw_product_code
+        .str.upper()
+        .eq(
+            "NO."
+        )
     )
 
-    data = (
-        data.loc[valid]
-        .reset_index(drop=True)
+    df = (
+        df.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
     )
+
+    raw_product_code = (
+        raw_product_code.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+    raw_sku = (
+        raw_sku.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+    qty = (
+        qty.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+    # ========================================================
+    # Build Output
+    # ========================================================
 
     output = base_records(
-        data,
+        df,
         meta,
-        "T13_MONTHLY_HORIZONTAL",
+        "T13_OAK_BARREL",
         uploaded_file.name,
     )
 
-    output["SOURCE_SHEET"] = "Page1"
-
-    output["SOURCE_ROW"] = range(
-        header_row + 2,
-        header_row + 2 + len(data),
+    output[
+        "RAW_CUSTOMER"
+    ] = (
+        meta[
+            "FILE_RAWDATA_NAME"
+        ]
     )
 
-    output["RAW_CUSTOMER"] = (
-        meta["FILE_RAWDATA_NAME"]
+    output[
+        "RAW_ROW_CUSTOMER"
+    ] = ""
+
+    output[
+        "RAW_PRODUCT_CODE"
+    ] = (
+        raw_product_code
     )
 
-    output["RAW_ROW_CUSTOMER"] = ""
-
-    output["RAW_PRODUCT_CODE"] = (
-        data["RAW_PRODUCT_CODE"]
+    output[
+        "RAW_SKU"
+    ] = (
+        raw_sku
     )
 
-    output["RAW_SKU"] = (
-        data["RAW_SKU"]
+    output[
+        "QTY"
+    ] = (
+        qty
     )
 
-    output["QTY"] = (
-        data["QTY"]
-    )
+    # Final price still uses SKU Mapping RSP
+    output[
+        "UNIT_PRICE"
+    ] = pd.NA
 
-    output["UNIT_PRICE"] = pd.NA
-    output["TOTAL_PRICE"] = pd.NA
+    output[
+        "TOTAL_PRICE"
+    ] = pd.NA
 
-    output["RAW_BRAND"] = ""
-    output["RAW_SIZE"] = ""
-    output["RAW_CATEGORY"] = ""
+    output[
+        "RAW_UNIT_PRICE"
+    ] = pd.NA
 
-    output["SOURCE_QTY_COLUMN"] = (
-        target_month
-    )
+    output[
+        "RAW_TOTAL_PRICE"
+    ] = pd.NA
 
-    output["SOURCE_PRICE_COLUMN"] = (
+    output[
+        "RAW_BRAND"
+    ] = ""
+
+    output[
+        "RAW_SIZE"
+    ] = ""
+
+    output[
+        "RAW_CATEGORY"
+    ] = ""
+
+    output[
+        "SOURCE_QTY_COLUMN"
+    ] = "銷量"
+
+    output[
+        "SOURCE_PRICE_COLUMN"
+    ] = (
         "RSP_FROM_SKU_MAPPING"
     )
 
     return output
-
 
 
 # ============================================================
@@ -6869,41 +6997,22 @@ def detect_template_type(uploaded_file):
         pass
 
 
-# ========================================================
-# TEMPLATE 13
-# 橡木桶
-# ========================================================
+# ========================================================    
+### TEMPLATE 13
 
-    try:
-    
         filename_text = norm_text(
-            Path(uploaded_file.name).stem
+            Path(
+                uploaded_file.name
+            ).stem
         )
-    
-        first_20_text = " ".join(
-            norm_text(x).upper()
-            for x
-            in raw.iloc[:20]
-            .to_numpy()
-            .flatten()
-        )
-    
+        
         if (
             "橡木桶" in filename_text
-            and
-            "JAN" in first_20_text
-            and
-            "SEP" in first_20_text
-            and
-            "DEC" in first_20_text
         ):
-    
-            return "TEMPLATE_13"
-    
-    except Exception:
-        pass
-    
         
+            return "TEMPLATE_13"
+        
+            
 
 
     # ========================================================
