@@ -9830,25 +9830,8 @@ final_report = build_report(
 
 
 # ============================================================
-# STORE-LEVEL DATA RECONCILIATION
-#
-# Purpose:
-# SKU 合併後 Row Count 可以不同，
-# 所以改用：
-#
-# 年 + 月 + 店家編號
-#
-# 比較：
-# Source QTY vs Final Output QTY
+# STORE RECONCILIATION
 # ============================================================
-
-
-# ========================================================
-# 1. SOURCE SIDE
-#
-# detail = SKU Mapping 後、
-# 但還沒有 Final Report SKU aggregation
-# ========================================================
 
 source_store_check = (
     detail
@@ -9892,12 +9875,6 @@ source_store_check = (
 )
 
 
-# ========================================================
-# 2. OUTPUT SIDE
-#
-# final_report = 相同統一品項名稱合併之後
-# ========================================================
-
 output_store_check = (
     final_report
     .assign(
@@ -9932,10 +9909,6 @@ output_store_check = (
 )
 
 
-# ========================================================
-# 3. SOURCE vs OUTPUT
-# ========================================================
-
 store_reconciliation = (
     source_store_check
     .merge(
@@ -9949,10 +9922,6 @@ store_reconciliation = (
     )
 )
 
-
-# ========================================================
-# 4. CLEAN NUMERIC FIELDS
-# ========================================================
 
 for column in [
     "SOURCE_ROWS",
@@ -9970,10 +9939,6 @@ for column in [
     )
 
 
-# ========================================================
-# 5. QUANTITY DIFFERENCE
-# ========================================================
-
 store_reconciliation[
     "QTY_DIFF"
 ] = (
@@ -9986,13 +9951,6 @@ store_reconciliation[
     ]
 )
 
-
-# ========================================================
-# 6. ROW REDUCTION
-#
-# This is informational only.
-# SKU aggregation can reduce rows legitimately.
-# ========================================================
 
 store_reconciliation[
     "MERGED_ROWS"
@@ -10007,10 +9965,6 @@ store_reconciliation[
 )
 
 
-# ========================================================
-# 7. STATUS
-# ========================================================
-
 store_reconciliation[
     "STATUS"
 ] = (
@@ -10018,33 +9972,42 @@ store_reconciliation[
         "QTY_DIFF"
     ]
     .apply(
-        lambda value:
+        lambda x:
         "PASS"
-        if abs(value) < 0.000001
+        if abs(x) < 0.000001
         else "CHECK"
     )
 )
 
 
-# ========================================================
-# 8. SORT
-# ========================================================
+# ============================================================
+# TEMP DEBUG PREVIEW
+# 先放這裡確認，之後再移到 Dashboard
+# ============================================================
 
-store_reconciliation = (
-    store_reconciliation
-    .sort_values(
-        by=[
-            "年",
-            "月",
-            "店家編號",
-        ],
-        na_position="last",
-    )
-    .reset_index(
-        drop=True
-    )
+st.warning(
+    "DEBUG：Store Reconciliation 已執行"
 )
 
+st.write(
+    "store_reconciliation rows:",
+    len(store_reconciliation)
+)
+
+st.dataframe(
+    store_reconciliation,
+    use_container_width=True,
+    hide_index=True,
+)
+
+
+# ============================================================
+# Dashboard Metrics
+# ============================================================
+
+source_count = len(
+    raw_all
+)
 
 # ============================================================
 # Dashboard Metrics
