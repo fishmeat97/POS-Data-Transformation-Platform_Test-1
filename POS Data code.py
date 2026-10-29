@@ -6408,49 +6408,41 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
+   # ========================================================
     # TEMPLATE 13
     # 橡木桶
-    #
-    # Current Correct Template:
-    #
-    # CSV
-    # Header:
-    # NO. | 品名 | ... | 銷量
-    #
-    # IMPORTANT:
-    # 必須放在 generic CSV detection 前面
     # ========================================================
 
     if (
         "橡木桶"
         in filename_text
     ):
-
+    
         return "TEMPLATE_13"
-
+    
 
     # ========================================================
     # CSV FILES
     # ========================================================
 
-    if suffix == ".csv":
+        if suffix == ".csv":
+    
+            try:
+    
+                uploaded_file.seek(0)
+    
+                raw_csv = read_csv_flexible(
+                    uploaded_file,
+                    header=None,
+                )
 
-        try:
 
-            uploaded_file.seek(0)
-
-            raw_csv = read_csv_flexible(
-                uploaded_file,
-                header=None,
-            )
-
-
-            # =================================================
-            # CSV Generic Header Search
-            #
-            # 不直接 header=0，
-            # 因為 header 不一定是第一列
-            # =================================================
+    # =================================================
+    # CSV Generic Header Search
+    #
+    # 不直接 header=0，
+    # 因為 header 不一定是第一列
+    # =================================================
 
             template_7_header_row = (
                 find_header_row(
