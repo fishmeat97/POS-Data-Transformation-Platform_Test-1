@@ -473,6 +473,7 @@ def base_records(
 # Example: 冠德系列
 # ============================================================
 def transform_template_1(uploaded_file):
+
     meta = parse_filename(
         uploaded_file.name
     )
@@ -481,12 +482,19 @@ def transform_template_1(uploaded_file):
         uploaded_file.name
     ).suffix.lower()
 
+
+    uploaded_file.seek(0)
+
+
     if suffix == ".csv":
+
         df = read_csv_flexible(
             uploaded_file,
             header=0,
         )
+
     else:
+
         df = read_excel_bytes(
             uploaded_file,
             header=0,
