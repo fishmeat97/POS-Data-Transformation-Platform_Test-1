@@ -5422,6 +5422,7 @@ def transform_template_13(uploaded_file):
         uploaded_file,
         sheet_name=0,
         header=None,
+        engine="calamine",
     )
 
 
