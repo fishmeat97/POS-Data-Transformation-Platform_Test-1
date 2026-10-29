@@ -10182,22 +10182,99 @@ with d6:
     )
 
 # ============================================================
-# Reconciliation
 # ============================================================
-if (
-    source_count
-    == output_count
-):
-    st.success(
-        f"✔️ 資料筆數一致：來源 {source_count:,} = 輸出 {output_count:,}。"
-        " Unmapped 資料仍保留，不會因 Mapping 失敗被刪除。"
+# STORE-LEVEL RECONCILIATION
+# ============================================================
+
+store_pass_count = int(
+    store_reconciliation[
+        "STATUS"
+    ]
+    .eq("PASS")
+    .sum()
+)
+
+
+store_check_count = int(
+    store_reconciliation[
+        "STATUS"
+    ]
+    .eq("CHECK")
+    .sum()
+)
+
+
+total_store_count = len(
+    store_reconciliation
+)
+
+
+# ========================================================
+# KPI
+# ========================================================
+
+r1, r2, r3 = st.columns(3)
+
+
+with r1:
+
+    st.metric(
+        "🏪 核對店家",
+        f"{total_store_count:,}",
     )
 
+
+with r2:
+
+    st.metric(
+        "✅ PASS",
+        f"{store_pass_count:,}",
+    )
+
+
+with r3:
+
+    st.metric(
+        "⚠️ CHECK",
+        f"{store_check_count:,}",
+    )
+
+
+# ========================================================
+# Result
+# ========================================================
+
+if store_check_count == 0:
+
+    st.success(
+        "✅ 所有店家銷量核對完成："
+        "來源資料與最終輸出總銷量一致。"
+    )
+
+
 else:
+
     st.error(
-        f"❌ 資料筆數異常：來源 {source_count:,}，"
-        f"輸出 {output_count:,}，"
-        f"差異 {output_count - source_count:+,}。"
+        f"⚠️ 有 {store_check_count:,} 間店家 "
+        "來源與輸出銷量不一致。"
+    )
+
+
+    reconciliation_issues = (
+        store_reconciliation[
+            store_reconciliation[
+                "STATUS"
+            ]
+            .eq("CHECK")
+        ]
+        .copy()
+    )
+
+
+    st.dataframe(
+        reconciliation_issues,
+        use_container_width=True,
+        hide_index=True,
     )
 
 
@@ -11818,3 +11895,16 @@ st.markdown(
 - 檔名中的業務代號與合約編號會與 Customer Mapping 核對。
 """
 )
+
+
+st.subheader(
+    "🏪 Store Reconciliation Preview"
+)
+
+st.dataframe(
+    store_reconciliation,
+    use_container_width=True,
+    hide_index=True,
+)
+
+
