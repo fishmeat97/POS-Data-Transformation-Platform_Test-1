@@ -8974,26 +8974,207 @@ def build_report(detail):
     )
 
 
-    # ========================================================
+      # ========================================================
     # 7. ENSURE ALL OUTPUT COLUMNS EXIST
     # ========================================================
-
+    
     for column in OUTPUT_COLUMNS:
-
+    
         if column not in report.columns:
-
+    
             report[column] = pd.NA
-
-
+    
+    
     # ========================================================
-    # 8. FORCE FINAL COLUMN ORDER
+    # 8. MERGE SAME UNIFIED PRODUCT
+    #
+    # Merge when the following are the same:
+    #
+    # 地區
+    # 業務員
+    # 合約等級
+    # 合約編號
+    # 合約名稱
+    # 店家編號
+    # 店家名稱
+    # 統一品項名稱
+    # 年
+    # 月
+    #
+    # Only QTY is accumulated.
     # ========================================================
-
+    
+    group_cols = [
+        "地區",
+        "業務員",
+        "合約等級",
+        "合約編號",
+        "合約名稱",
+        "店家編號",
+        "店家名稱",
+        "統一品項名稱",
+        "年",
+        "月",
+    ]
+    
+    
+    # --------------------------------------------------------
+    # Make sure QTY is numeric
+    # --------------------------------------------------------
+    
+    report["銷量(瓶)"] = pd.to_numeric(
+        report["銷量(瓶)"],
+        errors="coerce",
+    )
+    
+    
+    # --------------------------------------------------------
+    # IMPORTANT:
+    # Only merge rows that have a Mapping Name.
+    #
+    # UNMAPPED rows should NOT all collapse together just
+    # because 統一品項名稱 is blank.
+    # --------------------------------------------------------
+    
+    mapped_mask = (
+        report[
+            "統一品項名稱"
+        ]
+        .map(
+            norm_text
+        )
+        .ne("")
+    )
+    
+    
+    mapped_report = (
+        report.loc[
+            mapped_mask
+        ]
+        .copy()
+    )
+    
+    
+    unmapped_report = (
+        report.loc[
+            ~mapped_mask
+        ]
+        .copy()
+    )
+    
+    
+    # --------------------------------------------------------
+    # Aggregate mapped products
+    # --------------------------------------------------------
+    
+    if not mapped_report.empty:
+    
+        agg_rules = {
+    
+            "銷量(瓶)": "sum",
+    
+            # RSP / Product Mapping fields
+            "單價": "first",
+            "建議售價": "first",
+            "價格帶": "first",
+            "製造商": "first",
+            "品牌": "first",
+            "容量": "first",
+            "品類": "first",
+    
+            # Original SKU:
+            # If multiple raw SKU names map to the same product,
+            # keep the first one for display.
+            "品項": "first",
+        }
+    
+    
+        mapped_report = (
+            mapped_report
+            .groupby(
+                group_cols,
+                dropna=False,
+                as_index=False,
+            )
+            .agg(
+                agg_rules
+            )
+        )
+    
+    
+        # ----------------------------------------------------
+        # Recalculate Total Price
+        #
+        # 總價 = 合併後銷量 × RSP
+        # ----------------------------------------------------
+    
+        mapped_report[
+            "總價"
+        ] = (
+            pd.to_numeric(
+                mapped_report[
+                    "銷量(瓶)"
+                ],
+                errors="coerce",
+            )
+            *
+            pd.to_numeric(
+                mapped_report[
+                    "單價"
+                ],
+                errors="coerce",
+            )
+        )
+    
+    
+    # ========================================================
+    # 9. COMBINE MAPPED + UNMAPPED
+    #
+    # Unmapped rows remain unchanged.
+    # ========================================================
+    
+    report = pd.concat(
+        [
+            mapped_report,
+            unmapped_report,
+        ],
+        ignore_index=True,
+        sort=False,
+    )
+    
+    
+    # ========================================================
+    # 10. FORCE FINAL COLUMN ORDER
+    # ========================================================
+    
     report = report[
         OUTPUT_COLUMNS
     ]
-
-
+    
+    
+    # ========================================================
+    # 11. OPTIONAL SORT
+    #
+    # Makes the final report easier to read.
+    # ========================================================
+    
+    report = (
+        report
+        .sort_values(
+            by=[
+                "年",
+                "月",
+                "店家編號",
+                "統一品項名稱",
+            ],
+            na_position="last",
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+    
+    
     return report
 
 # ============================================================
