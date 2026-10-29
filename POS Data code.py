@@ -9823,11 +9823,232 @@ detail = attach_sku_mapping(
 # ============================================================
 # Final Report
 # ============================================================
+
 final_report = build_report(
     detail
 )
 
 
+# ============================================================
+# STORE-LEVEL DATA RECONCILIATION
+#
+# Purpose:
+# SKU 合併後 Row Count 可以不同，
+# 所以改用：
+#
+# 年 + 月 + 店家編號
+#
+# 比較：
+# Source QTY vs Final Output QTY
+# ============================================================
+
+
+# ========================================================
+# 1. SOURCE SIDE
+#
+# detail = SKU Mapping 後、
+# 但還沒有 Final Report SKU aggregation
+# ========================================================
+
+source_store_check = (
+    detail
+    .assign(
+        QTY_CHECK=pd.to_numeric(
+            detail["QTY"],
+            errors="coerce",
+        )
+    )
+    .groupby(
+        [
+            "YEAR",
+            "MONTH",
+            "FILE_OUTLET_NO",
+        ],
+        dropna=False,
+        as_index=False,
+    )
+    .agg(
+        SOURCE_ROWS=(
+            "QTY_CHECK",
+            "size",
+        ),
+        SOURCE_QTY=(
+            "QTY_CHECK",
+            "sum",
+        ),
+    )
+)
+
+
+source_store_check = (
+    source_store_check
+    .rename(
+        columns={
+            "YEAR": "年",
+            "MONTH": "月",
+            "FILE_OUTLET_NO": "店家編號",
+        }
+    )
+)
+
+
+# ========================================================
+# 2. OUTPUT SIDE
+#
+# final_report = 相同統一品項名稱合併之後
+# ========================================================
+
+output_store_check = (
+    final_report
+    .assign(
+        QTY_CHECK=pd.to_numeric(
+            final_report["銷量(瓶)"],
+            errors="coerce",
+        )
+    )
+    .groupby(
+        [
+            "年",
+            "月",
+            "店家編號",
+        ],
+        dropna=False,
+        as_index=False,
+    )
+    .agg(
+        店家名稱=(
+            "店家名稱",
+            "first",
+        ),
+        OUTPUT_ROWS=(
+            "QTY_CHECK",
+            "size",
+        ),
+        OUTPUT_QTY=(
+            "QTY_CHECK",
+            "sum",
+        ),
+    )
+)
+
+
+# ========================================================
+# 3. SOURCE vs OUTPUT
+# ========================================================
+
+store_reconciliation = (
+    source_store_check
+    .merge(
+        output_store_check,
+        how="outer",
+        on=[
+            "年",
+            "月",
+            "店家編號",
+        ],
+    )
+)
+
+
+# ========================================================
+# 4. CLEAN NUMERIC FIELDS
+# ========================================================
+
+for column in [
+    "SOURCE_ROWS",
+    "OUTPUT_ROWS",
+    "SOURCE_QTY",
+    "OUTPUT_QTY",
+]:
+
+    store_reconciliation[column] = (
+        pd.to_numeric(
+            store_reconciliation[column],
+            errors="coerce",
+        )
+        .fillna(0)
+    )
+
+
+# ========================================================
+# 5. QUANTITY DIFFERENCE
+# ========================================================
+
+store_reconciliation[
+    "QTY_DIFF"
+] = (
+    store_reconciliation[
+        "OUTPUT_QTY"
+    ]
+    -
+    store_reconciliation[
+        "SOURCE_QTY"
+    ]
+)
+
+
+# ========================================================
+# 6. ROW REDUCTION
+#
+# This is informational only.
+# SKU aggregation can reduce rows legitimately.
+# ========================================================
+
+store_reconciliation[
+    "MERGED_ROWS"
+] = (
+    store_reconciliation[
+        "SOURCE_ROWS"
+    ]
+    -
+    store_reconciliation[
+        "OUTPUT_ROWS"
+    ]
+)
+
+
+# ========================================================
+# 7. STATUS
+# ========================================================
+
+store_reconciliation[
+    "STATUS"
+] = (
+    store_reconciliation[
+        "QTY_DIFF"
+    ]
+    .apply(
+        lambda value:
+        "PASS"
+        if abs(value) < 0.000001
+        else "CHECK"
+    )
+)
+
+
+# ========================================================
+# 8. SORT
+# ========================================================
+
+store_reconciliation = (
+    store_reconciliation
+    .sort_values(
+        by=[
+            "年",
+            "月",
+            "店家編號",
+        ],
+        na_position="last",
+    )
+    .reset_index(
+        drop=True
+    )
+)
+
+
+# ============================================================
+# Dashboard Metrics
+# ============================================================
 # ============================================================
 # Dashboard Metrics
 # ============================================================
