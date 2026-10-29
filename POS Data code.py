@@ -6435,113 +6435,109 @@ def detect_template_type(uploaded_file):
         return "TEMPLATE_13"
 
 
-    # ========================================================
-    # CSV FILES
+   # ========================================================
+# CSV FILES
+# ========================================================
+
+if suffix == ".csv":
+
+    # ====================================================
+    # 1. Template 1
+    # Standard POS
+    # Header expected at Row 1
+    # ====================================================
+
+    try:
+
+        uploaded_file.seek(0)
+
+        df = read_csv_flexible(
+            uploaded_file,
+            header=0,
+        )
+
+
+        sku_col = first_matching_column(
+            df,
+            [
+                "品項名稱 SKU Name",
+                "SKU Name",
+                "品項名稱",
+                "品名",
+                "商品名稱",
+            ],
+        )
+
+
+        qty_col = first_matching_column(
+            df,
+            [
+                "銷量 Quantity",
+                "Quantity",
+                "銷量",
+                "數量",
+                "瓶數",
+            ],
+        )
+
+
+        if (
+            sku_col is not None
+            and
+            qty_col is not None
+        ):
+
+            return "TEMPLATE_1"
+
+
+    except Exception:
+
+        pass
+
+
+    # ====================================================
+    # 2. Template 7
+    # Generic SKU + QTY
     #
-    # CSV 在這裡獨立處理。
-    # 因為後面的 pd.ExcelFile 不能拿來讀 CSV。
-    # ========================================================
+    # Header may appear anywhere in first 30 rows
+    # ====================================================
 
-    if suffix == ".csv":
+    try:
 
-        # ----------------------------------------------------
-        # CSV - Template 7 Generic
-        #
-        # Header 不一定在第一列，
-        # 所以先用 header=None 讀取。
-        # ----------------------------------------------------
+        uploaded_file.seek(0)
 
-        try:
-
-            uploaded_file.seek(0)
-
-            raw_csv = read_csv_flexible(
-                uploaded_file,
-                header=None,
-            )
+        raw_csv = read_csv_flexible(
+            uploaded_file,
+            header=None,
+        )
 
 
-            template_7_header_row = (
-                find_header_row(
-                    raw_csv,
-                    required_fields=[
-                        "SKU",
-                        "QTY",
-                    ],
-                    max_rows=30,
-                )
-            )
-
-
-            if (
-                template_7_header_row
-                is not None
-            ):
-
-                return "TEMPLATE_7"
-
-
-        except Exception:
-
-            pass
-
-
-        # ----------------------------------------------------
-        # CSV - Template 1 Fallback
-        #
-        # Standard POS with header row 1
-        # ----------------------------------------------------
-
-        try:
-
-            uploaded_file.seek(0)
-
-            df = read_csv_flexible(
-                uploaded_file,
-                header=0,
-            )
-
-
-            sku_col = first_matching_column(
-                df,
-                [
-                    "品項名稱 SKU Name",
-                    "SKU Name",
-                    "品項名稱",
-                    "品名",
-                    "商品名稱",
+        template_7_header_row = (
+            find_header_row(
+                raw_csv,
+                required_fields=[
+                    "SKU",
+                    "QTY",
                 ],
+                max_rows=30,
             )
+        )
 
 
-            qty_col = first_matching_column(
-                df,
-                [
-                    "銷量 Quantity",
-                    "Quantity",
-                    "銷量",
-                    "數量",
-                    "瓶數",
-                ],
-            )
+        if (
+            template_7_header_row
+            is not None
+        ):
+
+            return "TEMPLATE_7"
 
 
-            if (
-                sku_col is not None
-                and
-                qty_col is not None
-            ):
+    except Exception:
 
-                return "TEMPLATE_1"
+        pass
 
 
-        except Exception:
-
-            pass
-
-
-        return "UNKNOWN"
-
+    return "UNKNOWN"
 
     # ========================================================
     # ONLY EXCEL BELOW
