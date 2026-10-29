@@ -6371,6 +6371,7 @@ def transform_template_15(uploaded_file):
 # Special templates must be detected BEFORE generic templates.
 # ============================================================
 
+
 def detect_template_type(uploaded_file):
 
     # ========================================================
@@ -6393,9 +6394,8 @@ def detect_template_type(uploaded_file):
     # TEMPLATE 14
     # 美滿商行
     #
-    # IMPORTANT:
-    # 舊式 .xls
-    # 必須在任何 pd.ExcelFile / pd.read_excel 前判斷
+    # Old .xls special format
+    # 必須在任何 Excel read 之前判斷
     # ========================================================
 
     if (
@@ -6408,41 +6408,49 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-   # ========================================================
     # TEMPLATE 13
     # 橡木桶
+    #
+    # Filename-based detection
+    #
+    # 目前橡木桶使用 Excel，
+    # transform_template_13 會依檔名月份
+    # 抓對應 JAN ~ DEC 欄位
     # ========================================================
 
     if (
         "橡木桶"
         in filename_text
     ):
-    
+
         return "TEMPLATE_13"
-    
+
 
     # ========================================================
     # CSV FILES
+    #
+    # CSV 在這裡獨立處理。
+    # 因為後面的 pd.ExcelFile 不能拿來讀 CSV。
     # ========================================================
 
-        if suffix == ".csv":
-    
-            try:
-    
-                uploaded_file.seek(0)
-    
-                raw_csv = read_csv_flexible(
-                    uploaded_file,
-                    header=None,
-                )
+    if suffix == ".csv":
 
+        # ----------------------------------------------------
+        # CSV - Template 7 Generic
+        #
+        # Header 不一定在第一列，
+        # 所以先用 header=None 讀取。
+        # ----------------------------------------------------
 
-    # =================================================
-            # CSV Generic Header Search
-            #
-            # 不直接 header=0，
-            # 因為 header 不一定是第一列
-            # =================================================
+        try:
+
+            uploaded_file.seek(0)
+
+            raw_csv = read_csv_flexible(
+                uploaded_file,
+                header=None,
+            )
+
 
             template_7_header_row = (
                 find_header_row(
@@ -6469,9 +6477,11 @@ def detect_template_type(uploaded_file):
             pass
 
 
-        # ====================================================
-        # CSV Standard POS fallback
-        # ====================================================
+        # ----------------------------------------------------
+        # CSV - Template 1 Fallback
+        #
+        # Standard POS with header row 1
+        # ----------------------------------------------------
 
         try:
 
@@ -6525,7 +6535,7 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # Only Excel Below
+    # ONLY EXCEL BELOW
     # ========================================================
 
     if suffix not in [
@@ -6560,7 +6570,7 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # Read First Sheet as RAW
+    # Read First Sheet as Raw
     # ========================================================
 
     try:
@@ -6596,9 +6606,7 @@ def detect_template_type(uploaded_file):
         first_rows_text = " ".join(
             norm_text(value)
             for value
-            in raw.iloc[
-                :20
-            ]
+            in raw.iloc[:20]
             .to_numpy()
             .flatten()
         )
@@ -6676,7 +6684,7 @@ def detect_template_type(uploaded_file):
     # TEMPLATE 5
     # POS 公版 / 康尼克
     #
-    # Header not necessarily first row
+    # Header may not be row 1
     #
     # 品牌名稱 Brand Name
     # 品項名稱 SKU Name
@@ -6707,15 +6715,12 @@ def detect_template_type(uploaded_file):
 
 
             has_sku = any(
-
                 (
                     "品項名稱" in value
                     and
                     "SKU Name" in value
                 )
-
                 or
-
                 value == "品項名稱"
 
                 for value
@@ -6724,15 +6729,12 @@ def detect_template_type(uploaded_file):
 
 
             has_qty = any(
-
                 (
                     "銷量" in value
                     and
                     "Quantity" in value
                 )
-
                 or
-
                 value == "銷量"
 
                 for value
@@ -6741,15 +6743,12 @@ def detect_template_type(uploaded_file):
 
 
             has_brand = any(
-
                 (
                     "品牌名稱" in value
                     and
                     "Brand Name" in value
                 )
-
                 or
-
                 value == "品牌名稱"
 
                 for value
@@ -6758,19 +6757,14 @@ def detect_template_type(uploaded_file):
 
 
             has_size = any(
-
                 (
                     "規格" in value
                     and
                     "Size" in value
                 )
-
                 or
-
                 value == "規格"
-
                 or
-
                 value == "容量"
 
                 for value
@@ -6779,15 +6773,12 @@ def detect_template_type(uploaded_file):
 
 
             has_category = any(
-
                 (
                     "品類" in value
                     and
                     "Category" in value
                 )
-
                 or
-
                 value == "品類"
 
                 for value
@@ -6862,10 +6853,9 @@ def detect_template_type(uploaded_file):
 
     # ========================================================
     # TEMPLATE 8
-    # 唯君系列
+    # 唯君
     #
     # Filename-based detection
-    # Transformer handles multi-sheet structure dynamically
     # ========================================================
 
     if (
@@ -6914,20 +6904,18 @@ def detect_template_type(uploaded_file):
             has_product = any(
                 "品名規格"
                 in column
+
                 for column
                 in columns
             )
 
 
             has_qty = any(
-
                 (
                     "數量2"
                     in column
                 )
-
                 or
-
                 (
                     "數量"
                     in column
@@ -6984,11 +6972,9 @@ def detect_template_type(uploaded_file):
 
 
             if (
-                "商品代號"
-                in values
+                "商品代號" in values
                 and
-                "商品名稱"
-                in values
+                "商品名稱" in values
             ):
 
                 template_2_header_found = True
@@ -6997,6 +6983,7 @@ def detect_template_type(uploaded_file):
             if any(
                 "實銷"
                 in value
+
                 for value
                 in values
             ):
@@ -7051,14 +7038,11 @@ def detect_template_type(uploaded_file):
 
 
             has_qty = any(
-
                 (
                     "數"
                     in value
                 )
-
                 and
-
                 (
                     "量"
                     in value
@@ -7172,7 +7156,7 @@ def detect_template_type(uploaded_file):
     # TEMPLATE 10
     # 名酒集
     #
-    # No-header
+    # No header
     # Column A = SKU
     # Column B = QTY
     # ========================================================
@@ -7257,8 +7241,7 @@ def detect_template_type(uploaded_file):
     # TEMPLATE 12
     # 廣茂隆
     #
-    # POS public variant
-    # Blank QTY Header
+    # Blank QTY header
     # ========================================================
 
     try:
@@ -7284,6 +7267,7 @@ def detect_template_type(uploaded_file):
                     "品項名稱"
                 )
                 in x
+
                 for x
                 in first_row
             )
@@ -7330,8 +7314,8 @@ def detect_template_type(uploaded_file):
     # Generic SKU + QTY
     #
     # IMPORTANT:
-    # 必須靠後
-    # 因為這是 broad fallback template
+    # Broad fallback template
+    # 必須放在特殊 Template 後面
     # ========================================================
 
     try:
@@ -7422,7 +7406,6 @@ def detect_template_type(uploaded_file):
     # ========================================================
 
     return "UNKNOWN"
-
 # ============================================================
 # Unified Auto Transformer
 # ============================================================
