@@ -11876,29 +11876,8 @@ with export_col3:
 # ============================================================
 # Protection Notes
 # ============================================================
-st.divider()
-
 st.subheader(
-    "🔎 資料保護邏輯"
-)
-
-st.markdown(
-    """
-- 所有 Template 都從同一個上傳區上傳。
-- 系統會自動辨識 Template 格式。
-- Customer Mapping 採 LEFT JOIN。
-- SKU Mapping 採 LEFT JOIN。
-- Unmapped 資料不會被刪除。
-- Dashboard 固定核對來源資料筆數與輸出筆數。
-- 每一筆資料保留來源檔案與來源列資訊。
-- Mapping 重複值會另外顯示供檢查。
-- 檔名中的業務代號與合約編號會與 Customer Mapping 核對。
-"""
-)
-
-
-st.subheader(
-    "🏪 Store Reconciliation Preview"
+    "🏪 All Store Reconciliation"
 )
 
 st.dataframe(
@@ -11907,4 +11886,25 @@ st.dataframe(
     hide_index=True,
 )
 
+
+reconciliation_issues = (
+    store_reconciliation[
+        store_reconciliation[
+            "STATUS"
+        ]
+        .eq("CHECK")
+    ]
+    .copy()
+)
+
+
+st.subheader(
+    "⚠️ CHECK Only"
+)
+
+st.dataframe(
+    reconciliation_issues,
+    use_container_width=True,
+    hide_index=True,
+)
 
