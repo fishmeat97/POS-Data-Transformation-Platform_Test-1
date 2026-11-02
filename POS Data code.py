@@ -9784,7 +9784,10 @@ def build_report(detail):
     # ========================================================
     # 5. ORIGINAL SKU NAME
     #
-    # 保留原始 Template 商品名稱
+    # 品項 = 原始 Template 商品名稱
+    #
+    # IMPORTANT:
+    # 現在使用「品項」作為合併依據
     # ========================================================
 
     report["品項"] = safe_column(
@@ -9831,21 +9834,31 @@ def build_report(detail):
     )
 
 
-      # ========================================================
+    # ========================================================
     # 7. ENSURE ALL OUTPUT COLUMNS EXIST
     # ========================================================
-    
+
     for column in OUTPUT_COLUMNS:
-    
+
         if column not in report.columns:
-    
+
             report[column] = pd.NA
-    
-    
+
+
     # ========================================================
-    # 8. MERGE SAME UNIFIED PRODUCT
+    # 8. PREPARE QTY
+    # ========================================================
+
+    report["銷量(瓶)"] = pd.to_numeric(
+        report["銷量(瓶)"],
+        errors="coerce",
+    )
+
+
+    # ========================================================
+    # 9. MERGE SAME 品項
     #
-    # Merge when the following are the same:
+    # Merge only when these fields are the same:
     #
     # 地區
     # 業務員
@@ -9854,13 +9867,30 @@ def build_report(detail):
     # 合約名稱
     # 店家編號
     # 店家名稱
-    # 統一品項名稱
+    # 品項             <-- CHANGED
     # 年
     # 月
     #
-    # Only QTY is accumulated.
+    # 「統一品項名稱」不再是 Group Key
+    #
+    # Example:
+    #
+    # 品項=A酒700ml | Mapping=A酒 | QTY=2
+    # 品項=A酒700ml | Mapping=A酒 | QTY=3
+    #
+    # ↓
+    #
+    # 品項=A酒700ml | Mapping=A酒 | QTY=5
+    #
+    #
+    # But:
+    #
+    # 品項=A酒700ml | Mapping=A酒
+    # 品項=A酒禮盒  | Mapping=A酒
+    #
+    # 不會合併
     # ========================================================
-    
+
     group_cols = [
         "地區",
         "業務員",
@@ -9869,85 +9899,91 @@ def build_report(detail):
         "合約名稱",
         "店家編號",
         "店家名稱",
-        "統一品項名稱",
+        "品項",
         "年",
         "月",
     ]
-    
-    
-    # --------------------------------------------------------
-    # Make sure QTY is numeric
-    # --------------------------------------------------------
-    
-    report["銷量(瓶)"] = pd.to_numeric(
-        report["銷量(瓶)"],
-        errors="coerce",
-    )
-    
-    
-    # --------------------------------------------------------
-    # IMPORTANT:
-    # Only merge rows that have a Mapping Name.
+
+
+    # ========================================================
+    # 10. ONLY MERGE ROWS WITH 品項
     #
-    # UNMAPPED rows should NOT all collapse together just
-    # because 統一品項名稱 is blank.
-    # --------------------------------------------------------
-    
-    mapped_mask = (
+    # 避免所有空白 RAW_SKU 被合併成同一筆
+    # ========================================================
+
+    sku_mask = (
         report[
-            "統一品項名稱"
+            "品項"
         ]
         .map(
             norm_text
         )
         .ne("")
     )
-    
-    
-    mapped_report = (
+
+
+    sku_report = (
         report.loc[
-            mapped_mask
+            sku_mask
         ]
         .copy()
     )
-    
-    
-    unmapped_report = (
+
+
+    blank_sku_report = (
         report.loc[
-            ~mapped_mask
+            ~sku_mask
         ]
         .copy()
     )
-    
-    
-    # --------------------------------------------------------
-    # Aggregate mapped products
-    # --------------------------------------------------------
-    
-    if not mapped_report.empty:
-    
+
+
+    # ========================================================
+    # 11. AGGREGATE SAME 品項
+    # ========================================================
+
+    if not sku_report.empty:
+
         agg_rules = {
-    
+
+            # =================================================
+            # Quantity
+            # =================================================
+
             "銷量(瓶)": "sum",
-    
-            # RSP / Product Mapping fields
+
+
+            # =================================================
+            # Price
+            #
+            # Same RAW SKU should normally have same RSP
+            # =================================================
+
             "單價": "first",
+
             "建議售價": "first",
+
+
+            # =================================================
+            # SKU Mapping Fields
+            # =================================================
+
             "價格帶": "first",
+
             "製造商": "first",
+
             "品牌": "first",
+
+            "統一品項名稱": "first",
+
             "容量": "first",
+
             "品類": "first",
-    
-            # Original SKU:
-            # If multiple raw SKU names map to the same product,
-            # keep the first one for display.
-            "品項": "first",
         }
-    
-    
-        mapped_report = (
-            mapped_report
+
+
+        sku_report = (
+            sku_report
             .groupby(
                 group_cols,
                 dropna=False,
@@ -9957,64 +9993,66 @@ def build_report(detail):
                 agg_rules
             )
         )
-    
-    
-        # ----------------------------------------------------
+
+
+        # ====================================================
         # Recalculate Total Price
         #
-        # 總價 = 合併後銷量 × RSP
-        # ----------------------------------------------------
-    
-        mapped_report[
+        # 總價 = 合併後 QTY × RSP
+        # ====================================================
+
+        sku_report[
             "總價"
         ] = (
             pd.to_numeric(
-                mapped_report[
+                sku_report[
                     "銷量(瓶)"
                 ],
                 errors="coerce",
             )
             *
             pd.to_numeric(
-                mapped_report[
+                sku_report[
                     "單價"
                 ],
                 errors="coerce",
             )
         )
-    
-    
+
+
     # ========================================================
-    # 9. COMBINE MAPPED + UNMAPPED
+    # 12. COMBINE
     #
-    # Unmapped rows remain unchanged.
+    # 有品項：
+    # 同品項進行 aggregation
+    #
+    # 空白品項：
+    # 保留原始 row，不合併
     # ========================================================
-    
+
     report = pd.concat(
         [
-            mapped_report,
-            unmapped_report,
+            sku_report,
+            blank_sku_report,
         ],
         ignore_index=True,
         sort=False,
     )
-    
-    
+
+
     # ========================================================
-    # 10. FORCE FINAL COLUMN ORDER
+    # 13. FORCE FINAL COLUMN ORDER
     # ========================================================
-    
+
     report = report[
         OUTPUT_COLUMNS
-    ]
-    
-    
+    ].copy()
+
+
     # ========================================================
-    # 11. OPTIONAL SORT
-    #
-    # Makes the final report easier to read.
+    # 14. OPTIONAL SORT
     # ========================================================
-    
+
     report = (
         report
         .sort_values(
@@ -10022,18 +10060,29 @@ def build_report(detail):
                 "年",
                 "月",
                 "店家編號",
-                "統一品項名稱",
+                "品項",
             ],
             na_position="last",
+            kind="stable",
         )
         .reset_index(
             drop=True
         )
     )
-    
-    
-    return report
 
+
+    # ========================================================
+    # 15. CLEAN ATTRS
+    # ========================================================
+
+    report.attrs = {}
+
+
+    # ========================================================
+    # 16. RETURN
+    # ========================================================
+
+    return report
 # ============================================================
 # Excel Export
 # ============================================================
