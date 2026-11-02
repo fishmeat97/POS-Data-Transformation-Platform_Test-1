@@ -515,6 +515,7 @@ def transform_template_1(uploaded_file):
             "品名",
             "商品名稱",
             "品名規格",
+            "產品品名"
         ],
     )
 
