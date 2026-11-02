@@ -7845,15 +7845,10 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-# TEMPLATE 16
-# Store Sales Matrix
-#
-# Example:
-# 產品編號 | 產品品名 | 東門店 | 西門店
-#
-# No normal QTY header.
-# ========================================================
-
+    # TEMPLATE 16
+    # Store Sales Matrix
+    # ========================================================
+    
     try:
     
         product_code_aliases = [
@@ -7867,7 +7862,6 @@ def detect_template_type(uploaded_file):
             "品號",
         ]
     
-    
         product_name_aliases = [
             "產品品名",
             "產品名稱",
@@ -7876,9 +7870,7 @@ def detect_template_type(uploaded_file):
             "品項名稱",
         ]
     
-    
         template_16_header_row = None
-    
     
         for i in range(
             min(
@@ -7894,7 +7886,6 @@ def detect_template_type(uploaded_file):
                 if norm_text(value)
             ]
     
-    
             has_product_code = any(
                 norm_key(alias)
                 in values
@@ -7902,14 +7893,12 @@ def detect_template_type(uploaded_file):
                 in product_code_aliases
             )
     
-    
             has_product_name = any(
                 norm_key(alias)
                 in values
                 for alias
                 in product_name_aliases
             )
-    
     
             if (
                 has_product_code
@@ -7925,51 +7914,86 @@ def detect_template_type(uploaded_file):
             template_16_header_row
             is not None
         ):
-        
-            if not has_normal_qty_header:
-        
-                header_values_raw = [
-                    norm_text(value)
-                    for value
-                    in raw.iloc[
-                        template_16_header_row
-                    ].tolist()
+    
+            header_values_raw = [
+                norm_text(value)
+                for value
+                in raw.iloc[
+                    template_16_header_row
+                ].tolist()
+            ]
+    
+            header_values_norm = [
+                norm_key(value)
+                for value
+                in header_values_raw
+                if norm_text(value)
+            ]
+    
+    
+            # ----------------------------------------------------
+            # If normal QTY header exists,
+            # let Template 7 handle it.
+            # ----------------------------------------------------
+    
+            has_normal_qty_header = any(
+                norm_key(alias)
+                in header_values_norm
+                for alias
+                in STANDARD_HEADER_MAPPING[
+                    "QTY"
                 ]
-        
+            )
+    
+    
+            if not has_normal_qty_header:
+    
+                meta = parse_filename(
+                    uploaded_file.name
+                )
+    
                 target_store = norm_text(
-                    parse_filename(
-                        uploaded_file.name
-                    )[
+                    meta[
                         "FILE_RAWDATA_NAME"
                     ]
                 )
-        
+    
+                target_store_key = norm_key(
+                    target_store
+                )
+    
+    
                 store_header_found = any(
-                    norm_key(target_store)
-                    ==
-                    norm_key(value)
-        
+                    target_store_key
+                    and
+                    (
+                        target_store_key
+                        ==
+                        norm_key(value)
+                    )
                     for value
                     in header_values_raw
-        
                     if norm_text(value)
                 )
-        
+    
+    
                 if store_header_found:
-        
+    
                     return "TEMPLATE_16"
-
+    
+    
+    except Exception:
+    
+        pass
+    
+    
     # ========================================================
     # TEMPLATE 7
     # Generic SKU + QTY
-    #
-    # IMPORTANT:
-    # Broad fallback template
-    # 必須放在特殊 Template 後面
     # ========================================================
-
+    
     try:
-
+    
         template_7_header_row = (
             find_header_row(
                 raw,
@@ -7980,20 +8004,25 @@ def detect_template_type(uploaded_file):
                 max_rows=30,
             )
         )
-
-
+    
+    
         if (
             template_7_header_row
             is not None
         ):
-
+    
             return "TEMPLATE_7"
-
-
+    
+    
     except Exception:
-
+    
         pass
 
+
+# ========================================================
+# TEMPLATE 1
+# Standard POS
+# ========================================================
 
     # ========================================================
     # TEMPLATE 1
