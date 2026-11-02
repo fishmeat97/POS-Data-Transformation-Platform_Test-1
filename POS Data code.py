@@ -7925,43 +7925,39 @@ def detect_template_type(uploaded_file):
             template_16_header_row
             is not None
         ):
-    
-            # ----------------------------------------------------
-            # Important:
-            # Avoid stealing normal T7 files.
-            #
-            # If this row already contains a normal QTY header,
-            # let T7 handle it instead.
-            # ----------------------------------------------------
-    
-            header_values = [
-                norm_key(value)
-                for value
-                in raw.iloc[
-                    template_16_header_row
-                ].tolist()
-                if norm_text(value)
-            ]
-    
-    
-            has_normal_qty_header = any(
-                norm_key(alias)
-                in header_values
-                for alias
-                in STANDARD_HEADER_MAPPING[
-                    "QTY"
-                ]
-            )
-    
-    
+        
             if not has_normal_qty_header:
-    
-                return "TEMPLATE_16"
-    
-    
-    except Exception:
-    
-        pass
+        
+                header_values_raw = [
+                    norm_text(value)
+                    for value
+                    in raw.iloc[
+                        template_16_header_row
+                    ].tolist()
+                ]
+        
+                target_store = norm_text(
+                    parse_filename(
+                        uploaded_file.name
+                    )[
+                        "FILE_RAWDATA_NAME"
+                    ]
+                )
+        
+                store_header_found = any(
+                    norm_key(target_store)
+                    ==
+                    norm_key(value)
+        
+                    for value
+                    in header_values_raw
+        
+                    if norm_text(value)
+                )
+        
+                if store_header_found:
+        
+                    return "TEMPLATE_16"
 
     # ========================================================
     # TEMPLATE 7
