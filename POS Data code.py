@@ -243,44 +243,67 @@ def clean_file_label(filename):
 
 def numeric(series):
 
-    cleaned = (
+    raw = (
         series
         .astype(str)
+        .str.strip()
+        .str.replace(",", "", regex=False)
+    )
 
-        # Remove commas
-        .str.replace(
-            ",",
-            "",
-            regex=False,
+
+    # ========================================================
+    # Exclude barcode / product-code-like values
+    #
+    # Example:
+    # 4713268580974
+    # 6921014044399
+    #
+    # Pure integer with 8 ~ 14 digits
+    # will NOT be treated as quantity.
+    # ========================================================
+
+    is_barcode_like = (
+        raw
+        .str.match(
+            r"^\d{8,14}$",
+            na=False,
         )
+    )
 
-        # Remove common Chinese quantity units
+
+    cleaned = (
+        raw
         .str.replace(
             r"(瓶|支|罐|箱|盒|包|桶|組|入|個|PCS|PC|BOTTLE|BOTTLES)",
             "",
             regex=True,
             case=False,
         )
-
-        # Remove whitespace
         .str.replace(
             r"\s+",
             "",
             regex=True,
         )
-
-        # Keep only number-related characters
         .str.extract(
             r"([-+]?\d*\.?\d+)",
             expand=False,
         )
     )
 
-    return pd.to_numeric(
+
+    result = pd.to_numeric(
         cleaned,
         errors="coerce",
     )
 
+
+    # Barcode-like values -> NaN
+    result.loc[
+        is_barcode_like
+    ] = pd.NA
+
+
+    return result
 
 def norm_id_key(value):
 
