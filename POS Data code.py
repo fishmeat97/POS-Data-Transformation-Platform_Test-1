@@ -8348,11 +8348,11 @@ def auto_transform_template(uploaded_file):
 
     elif template_type == "TEMPLATE_16":
 
-    uploaded_file.seek(0)
-
-    result = transform_template_16(
-        uploaded_file
-    )
+        uploaded_file.seek(0)
+    
+        result = transform_template_16(
+            uploaded_file
+        )
 
         return (
             result,
