@@ -8354,10 +8354,10 @@ def auto_transform_template(uploaded_file):
         uploaded_file
     )
 
-    return (
-        result,
-        "Template 16｜Store Sales Matrix",
-    )
+        return (
+            result,
+            "Template 16｜Store Sales Matrix",
+        )
 
 
     
