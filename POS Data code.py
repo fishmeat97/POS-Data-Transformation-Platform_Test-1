@@ -6352,22 +6352,27 @@ def transform_template_15(uploaded_file):
     return output
 
 # ============================================================
+# ============================================================
 # TEMPLATE 16
 # Store Sales Matrix
 #
+# Rule:
+#
+# Product Code = 產品編號 / 商品編號 / 品號...
+# SKU          = 產品品名 / 商品名稱 / 品名...
+# QTY          = SKU column immediately to the RIGHT
+#
 # Example:
 #
-# 產品編號 | 產品品名 | 東門 | 西門 | 長村 | ...
+# 產品編號 | 產品品名             | 東門店
+# F120     | 亞伯樂 雪莉原桶-76桶 | 3
 #
-# Filename example:
-# xxxx_xxxx_202609_xxxx_合歡-東門.xlsx
+# RAW_PRODUCT_CODE = F120
+# RAW_SKU          = 亞伯樂 雪莉原桶-76桶
+# QTY              = 3
 #
-# RAW_PRODUCT_CODE = 產品編號
-# RAW_SKU          = 產品品名
-# QTY              = 東門
-#
-# Final price:
-# RSP from SKU Mapping
+# Price:
+# Final Report uses SKU Mapping RSP
 # ============================================================
 
 def transform_template_16(uploaded_file):
@@ -6379,7 +6384,6 @@ def transform_template_16(uploaded_file):
     meta = parse_filename(
         uploaded_file.name
     )
-
 
     suffix = Path(
         uploaded_file.name
@@ -6459,11 +6463,12 @@ def transform_template_16(uploaded_file):
 
 
     # ========================================================
-    # 3. Define Header Aliases
+    # 3. Header Aliases
     # ========================================================
 
     product_code_aliases = [
         "產品編號",
+        "產品代號",
         "商品編號",
         "商品代號",
         "商品號碼",
@@ -6471,7 +6476,6 @@ def transform_template_16(uploaded_file):
         "貨品代號",
         "貨品號碼",
         "品號",
-        "產品代號",
         "SKU Code",
         "SKU code",
     ]
@@ -6482,9 +6486,9 @@ def transform_template_16(uploaded_file):
         "產品名稱",
         "商品名稱",
         "商品品名",
-        "品名",
-        "品項名稱",
         "貨品名稱",
+        "品項名稱",
+        "品名",
         "SKU Name",
         "Product Name",
     ]
@@ -6493,12 +6497,13 @@ def transform_template_16(uploaded_file):
     # ========================================================
     # 4. Find Header Row
     #
-    # Template 16 does NOT require a QTY header.
+    # Only need:
     #
-    # Required:
     # Product Code
     # +
     # Product Name
+    #
+    # QTY header does NOT matter.
     # ========================================================
 
     header_row = None
@@ -6511,24 +6516,24 @@ def transform_template_16(uploaded_file):
         )
     ):
 
-        values_raw = [
+        row_values = [
             norm_text(value)
             for value
             in raw.iloc[i].tolist()
         ]
 
 
-        values_norm = [
+        normalized_values = [
             norm_key(value)
             for value
-            in values_raw
+            in row_values
             if norm_text(value)
         ]
 
 
         has_product_code = any(
             norm_key(alias)
-            in values_norm
+            in normalized_values
 
             for alias
             in product_code_aliases
@@ -6537,7 +6542,7 @@ def transform_template_16(uploaded_file):
 
         has_product_name = any(
             norm_key(alias)
-            in values_norm
+            in normalized_values
 
             for alias
             in product_name_aliases
@@ -6558,7 +6563,7 @@ def transform_template_16(uploaded_file):
     if header_row is None:
 
         raise ValueError(
-            "Template 16 找不到產品編號 / 產品品名 Header。"
+            "Template 16 找不到「產品編號 + 產品品名」類型 Header。"
         )
 
 
@@ -6620,6 +6625,13 @@ def transform_template_16(uploaded_file):
         )
 
 
+    if df is None:
+
+        raise ValueError(
+            "Template 16 Header 重新讀取結果為 None。"
+        )
+
+
     # ========================================================
     # 6. Clean Column Names
     # ========================================================
@@ -6650,18 +6662,12 @@ def transform_template_16(uploaded_file):
 
 
     # ========================================================
-    # 7. Find Product Columns
+    # 7. Find Product Code Column
     # ========================================================
 
     product_code_col = first_matching_column(
         df,
         product_code_aliases,
-    )
-
-
-    sku_col = first_matching_column(
-        df,
-        product_name_aliases,
     )
 
 
@@ -6673,6 +6679,16 @@ def transform_template_16(uploaded_file):
         )
 
 
+    # ========================================================
+    # 8. Find SKU Column
+    # ========================================================
+
+    sku_col = first_matching_column(
+        df,
+        product_name_aliases,
+    )
+
+
     if sku_col is None:
 
         raise ValueError(
@@ -6682,347 +6698,65 @@ def transform_template_16(uploaded_file):
 
 
     # ========================================================
-    # 8. Get Target Store Name from Filename
+    # 9. QTY Column
+    #
+    # IMPORTANT:
+    #
+    # Do NOT use store name.
+    #
+    # QTY = column immediately RIGHT of SKU column.
     #
     # Example:
     #
-    # FILE_RAWDATA_NAME
-    # = 合歡-東門
+    # 產品編號 | 產品品名 | 東門店
     #
-    # Excel Header
-    # = 東門
+    # SKU index = 1
+    # QTY index = 2
     # ========================================================
 
-    target_store = norm_text(
-        meta[
-            "FILE_RAWDATA_NAME"
-        ]
+    columns = list(
+        df.columns
     )
 
 
-    if not target_store:
+    try:
+
+        sku_col_index = columns.index(
+            sku_col
+        )
+
+
+    except ValueError:
 
         raise ValueError(
-            "Template 16 無法從檔名取得 Rawdata Name。"
+            "Template 16 無法定位產品品名欄位位置。"
         )
 
 
-    # ========================================================
-    # 9. Generate Store Name Variants
-    #
-    # Example:
-    #
-    # 合歡-東門
-    #
-    # variants:
-    #
-    # 合歡-東門
-    # 東門
-    # ========================================================
+    qty_col_index = (
+        sku_col_index
+        + 1
+    )
 
-    store_name_variants = []
-
-
-    # Full name
-    if target_store:
-
-        store_name_variants.append(
-            target_store
-        )
-
-
-    # --------------------------------------------------------
-    # Split by common separators
-    # --------------------------------------------------------
-
-    separators = [
-        "-",
-        "_",
-        "－",
-        "—",
-        "–",
-        "/",
-        "\\",
-    ]
-
-
-    for separator in separators:
-
-        if separator in target_store:
-
-            parts = [
-                norm_text(part)
-                for part
-                in target_store.split(
-                    separator
-                )
-                if norm_text(part)
-            ]
-
-
-            # Add all individual parts
-            for part in parts:
-
-                if (
-                    part
-                    and
-                    part
-                    not in store_name_variants
-                ):
-
-                    store_name_variants.append(
-                        part
-                    )
-
-
-            # Especially keep final segment
-            if parts:
-
-                last_part = parts[-1]
-
-                if (
-                    last_part
-                    and
-                    last_part
-                    not in store_name_variants
-                ):
-
-                    store_name_variants.append(
-                        last_part
-                    )
-
-
-    # ========================================================
-    # 10. Extra 合歡-specific cleaning
-    #
-    # Example:
-    #
-    # 合歡東門
-    # → 東門
-    #
-    # 合歡-東門
-    # → 東門
-    # ========================================================
 
     if (
-        "合歡"
-        in target_store
+        qty_col_index
+        >= len(columns)
     ):
 
-        without_hehuan = norm_text(
-            target_store.replace(
-                "合歡",
-                ""
-            )
+        raise ValueError(
+            "Template 16 產品品名右邊沒有欄位，"
+            "因此無法取得銷量。"
         )
 
 
-        without_hehuan = (
-            without_hehuan
-            .lstrip(
-                "-_－—–/\\ "
-            )
-            .strip()
-        )
-
-
-        if (
-            without_hehuan
-            and
-            without_hehuan
-            not in store_name_variants
-        ):
-
-            store_name_variants.append(
-                without_hehuan
-            )
-
-
-    # ========================================================
-    # 11. Normalize Store Variants
-    # ========================================================
-
-    store_keys = []
-
-
-    for value in store_name_variants:
-
-        key = norm_key(
-            value
-        )
-
-
-        if (
-            key
-            and
-            key
-            not in store_keys
-        ):
-
-            store_keys.append(
-                key
-            )
-
-
-    # ========================================================
-    # 12. Candidate Store Columns
-    #
-    # Exclude Product Code / SKU
-    # ========================================================
-
-    candidate_columns = [
-        column
-        for column
-        in df.columns
-        if column
-        not in [
-            product_code_col,
-            sku_col,
-        ]
+    qty_col = columns[
+        qty_col_index
     ]
 
 
-    qty_col = None
-
-
     # ========================================================
-    # 13. Match QTY Column
-    #
-    # Priority:
-    #
-    # 1. Exact normalized match
-    # 2. Contains match
-    # ========================================================
-
-
-    # --------------------------------------------------------
-    # Priority 1:
-    # Exact Match
-    #
-    # 東門 == 東門
-    # --------------------------------------------------------
-
-    for column in candidate_columns:
-
-        column_key = norm_key(
-            column
-        )
-
-
-        if not column_key:
-
-            continue
-
-
-        if column_key in store_keys:
-
-            qty_col = column
-
-            break
-
-
-    # --------------------------------------------------------
-    # Priority 2:
-    # Store variant contained in header
-    #
-    # 東門 -> 東門店
-    # --------------------------------------------------------
-
-    if qty_col is None:
-
-        for column in candidate_columns:
-
-            column_key = norm_key(
-                column
-            )
-
-
-            if not column_key:
-
-                continue
-
-
-            match_found = any(
-
-                store_key
-                and
-                (
-                    store_key
-                    in column_key
-                )
-
-                for store_key
-                in store_keys
-            )
-
-
-            if match_found:
-
-                qty_col = column
-
-                break
-
-
-    # --------------------------------------------------------
-    # Priority 3:
-    # Header contained in store variant
-    #
-    # filename:
-    # 合歡東門店
-    #
-    # column:
-    # 東門
-    # --------------------------------------------------------
-
-    if qty_col is None:
-
-        for column in candidate_columns:
-
-            column_key = norm_key(
-                column
-            )
-
-
-            if not column_key:
-
-                continue
-
-
-            match_found = any(
-
-                store_key
-                and
-                column_key
-                in store_key
-
-                for store_key
-                in store_keys
-            )
-
-
-            if match_found:
-
-                qty_col = column
-
-                break
-
-
-    # ========================================================
-    # 14. Validate Store Column
-    # ========================================================
-
-    if qty_col is None:
-
-        raise ValueError(
-            "Template 16 找不到與檔名店家對應的銷量欄位。"
-            f" Rawdata Name={target_store}"
-            f"｜Store Variants={store_name_variants}"
-            f"｜Available Columns={list(df.columns)}"
-        )
-
-
-    # ========================================================
-    # 15. Prepare Raw Product Code
+    # 10. Prepare Raw Product Code
     # ========================================================
 
     raw_product_code = (
@@ -7036,7 +6770,7 @@ def transform_template_16(uploaded_file):
 
 
     # ========================================================
-    # 16. Prepare Raw SKU
+    # 11. Prepare Raw SKU
     # ========================================================
 
     raw_sku = (
@@ -7050,7 +6784,7 @@ def transform_template_16(uploaded_file):
 
 
     # ========================================================
-    # 17. Prepare Quantity
+    # 12. Prepare Quantity
     # ========================================================
 
     qty = numeric(
@@ -7061,9 +6795,10 @@ def transform_template_16(uploaded_file):
 
 
     # ========================================================
-    # 18. Valid Rows
+    # 13. Valid Rows
     #
-    # Require:
+    # Keep:
+    #
     # SKU not blank
     # QTY numeric
     # ========================================================
@@ -7078,19 +6813,10 @@ def transform_template_16(uploaded_file):
 
 
     # ========================================================
-    # 19. Remove Obvious Header / Total Rows
+    # 14. Remove Obvious Header / Total Rows
     # ========================================================
 
-    invalid_product_codes = [
-        "TOTAL",
-        "合計",
-        "總計",
-        "NO",
-        "NO.",
-    ]
-
-
-    product_code_norm = (
+    product_code_key = (
         raw_product_code
         .map(
             norm_key
@@ -7098,21 +6824,29 @@ def transform_template_16(uploaded_file):
     )
 
 
+    invalid_code_keys = {
+        norm_key("TOTAL"),
+        norm_key("合計"),
+        norm_key("總計"),
+        norm_key("NO"),
+        norm_key("NO."),
+        norm_key("產品編號"),
+        norm_key("商品編號"),
+        norm_key("品號"),
+    }
+
+
     valid = (
         valid
         &
-        ~product_code_norm.isin(
-            [
-                norm_key(value)
-                for value
-                in invalid_product_codes
-            ]
+        ~product_code_key.isin(
+            invalid_code_keys
         )
     )
 
 
     # ========================================================
-    # 20. Apply Valid Filter
+    # 15. Apply Filter
     # ========================================================
 
     df = (
@@ -7156,20 +6890,21 @@ def transform_template_16(uploaded_file):
 
 
     # ========================================================
-    # 21. Check Result
+    # 16. Validate Final Data
     # ========================================================
 
-    if len(df) == 0:
+    if df.empty:
 
         raise ValueError(
-            "Template 16 找到店家欄位，"
-            "但沒有可用的 SKU / QTY 資料。"
-            f" QTY Column={qty_col}"
+            "Template 16 已找到產品品名與右側 QTY 欄位，"
+            "但沒有可使用的 SKU / QTY 資料。"
+            f" SKU Column={sku_col}"
+            f"｜QTY Column={qty_col}"
         )
 
 
     # ========================================================
-    # 22. Build Standard Output
+    # 17. Build Standard Output
     # ========================================================
 
     output = base_records(
@@ -7181,7 +6916,7 @@ def transform_template_16(uploaded_file):
 
 
     # ========================================================
-    # 23. Source Row
+    # 18. Source Row
     # ========================================================
 
     output[
@@ -7193,9 +6928,11 @@ def transform_template_16(uploaded_file):
 
 
     # ========================================================
-    # 24. Customer
+    # 19. Customer
     #
-    # Customer Mapping still uses filename metadata.
+    # Still use filename metadata for customer mapping.
+    #
+    # But it is NOT used for finding QTY anymore.
     # ========================================================
 
     output[
@@ -7211,7 +6948,7 @@ def transform_template_16(uploaded_file):
 
 
     # ========================================================
-    # 25. Product
+    # 20. Product Code
     # ========================================================
 
     output[
@@ -7219,13 +6956,17 @@ def transform_template_16(uploaded_file):
     ] = raw_product_code
 
 
+    # ========================================================
+    # 21. SKU
+    # ========================================================
+
     output[
         "RAW_SKU"
     ] = raw_sku
 
 
     # ========================================================
-    # 26. Quantity
+    # 22. Quantity
     # ========================================================
 
     output[
@@ -7234,9 +6975,9 @@ def transform_template_16(uploaded_file):
 
 
     # ========================================================
-    # 27. Source Price
+    # 23. Raw Source Price
     #
-    # Template 16 does not use source price.
+    # Not used in Template 16
     # ========================================================
 
     output[
@@ -7250,9 +6991,9 @@ def transform_template_16(uploaded_file):
 
 
     # ========================================================
-    # 28. Final Price
+    # 24. Final Price
     #
-    # Final report uses SKU Mapping RSP.
+    # Final report uses SKU Mapping RSP
     # ========================================================
 
     output[
@@ -7266,7 +7007,7 @@ def transform_template_16(uploaded_file):
 
 
     # ========================================================
-    # 29. Optional Raw Fields
+    # 25. Optional Raw Fields
     # ========================================================
 
     output[
@@ -7285,7 +7026,7 @@ def transform_template_16(uploaded_file):
 
 
     # ========================================================
-    # 30. Audit Information
+    # 26. Audit
     # ========================================================
 
     output[
@@ -7303,27 +7044,17 @@ def transform_template_16(uploaded_file):
 
 
     # ========================================================
-    # 31. Clean attrs
-    #
-    # Avoid pandas concat attrs issues
+    # 27. Clean attrs
     # ========================================================
 
     output.attrs = {}
 
 
     # ========================================================
-    # 32. Return
+    # 28. Return
     # ========================================================
 
     return output
-
-
-
-
-
-
-
-
 
 # ============================================================
 # AUTO DETECT TEMPLATE TYPE
