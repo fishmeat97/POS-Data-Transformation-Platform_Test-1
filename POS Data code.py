@@ -6351,6 +6351,530 @@ def transform_template_15(uploaded_file):
 
     return output
 
+# ============================================================
+# TEMPLATE 16
+# Store Sales Matrix
+#
+# Example:
+#
+# 產品編號 | 產品品名 | 東門店 | 西門店 | ...
+#
+# RAW_PRODUCT_CODE = 產品編號
+# RAW_SKU          = 產品品名
+# QTY              = 與檔名 Rawdata Name 對應的店家欄位
+#
+# Price:
+# Final Report uses SKU Mapping RSP
+# ============================================================
+
+def transform_template_16(uploaded_file):
+
+    # ========================================================
+    # 1. Parse Filename
+    # ========================================================
+
+    meta = parse_filename(
+        uploaded_file.name
+    )
+
+    suffix = Path(
+        uploaded_file.name
+    ).suffix.lower()
+
+
+    # ========================================================
+    # 2. Read Raw File
+    # ========================================================
+
+    uploaded_file.seek(0)
+
+    if suffix == ".csv":
+
+        raw = read_csv_flexible(
+            uploaded_file,
+            header=None,
+        )
+
+    else:
+
+        raw = read_excel_bytes(
+            uploaded_file,
+            sheet_name=0,
+            header=None,
+        )
+
+
+    if raw.empty:
+
+        raise ValueError(
+            "Template 16 檔案沒有資料。"
+        )
+
+
+    # ========================================================
+    # 3. Find Header Row
+    #
+    # Required:
+    # Product Code
+    # +
+    # Product Name
+    #
+    # QTY header is NOT required.
+    # ========================================================
+
+    header_row = None
+
+
+    product_code_aliases = [
+        "產品編號",
+        "商品編號",
+        "商品代號",
+        "商品號碼",
+        "貨品編號",
+        "貨品代號",
+        "貨品號碼",
+        "品號",
+    ]
+
+
+    product_name_aliases = [
+        "產品品名",
+        "產品名稱",
+        "商品名稱",
+        "品名",
+        "品項名稱",
+    ]
+
+
+    for i in range(
+        min(
+            30,
+            len(raw),
+        )
+    ):
+
+        values = [
+            norm_text(value)
+            for value
+            in raw.iloc[i].tolist()
+        ]
+
+
+        normalized_values = [
+            norm_key(value)
+            for value
+            in values
+            if norm_text(value)
+        ]
+
+
+        has_product_code = any(
+            norm_key(alias)
+            in normalized_values
+            for alias
+            in product_code_aliases
+        )
+
+
+        has_product_name = any(
+            norm_key(alias)
+            in normalized_values
+            for alias
+            in product_name_aliases
+        )
+
+
+        if (
+            has_product_code
+            and
+            has_product_name
+        ):
+
+            header_row = i
+            break
+
+
+    if header_row is None:
+
+        raise ValueError(
+            "Template 16 找不到產品編號 / 產品品名 Header。"
+        )
+
+
+    # ========================================================
+    # 4. Read Again Using Correct Header
+    # ========================================================
+
+    uploaded_file.seek(0)
+
+
+    if suffix == ".csv":
+
+        df = read_csv_flexible(
+            uploaded_file,
+            header=header_row,
+        )
+
+    else:
+
+        df = read_excel_bytes(
+            uploaded_file,
+            sheet_name=0,
+            header=header_row,
+        )
+
+
+    df.columns = [
+        norm_text(column)
+        for column
+        in df.columns
+    ]
+
+
+    df = (
+        df
+        .dropna(
+            how="all"
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    # ========================================================
+    # 5. Find Product Columns
+    # ========================================================
+
+    product_code_col = first_matching_column(
+        df,
+        product_code_aliases,
+    )
+
+
+    sku_col = first_matching_column(
+        df,
+        product_name_aliases,
+    )
+
+
+    if (
+        product_code_col is None
+        or
+        sku_col is None
+    ):
+
+        raise ValueError(
+            "Template 16 找不到必要欄位。"
+            f" Product Code={product_code_col}, "
+            f"SKU={sku_col}"
+        )
+
+
+    # ========================================================
+    # 6. Find Store / QTY Column
+    #
+    # Use filename Rawdata Name
+    # Example:
+    # filename -> 東門店
+    # header   -> 東門店
+    # ========================================================
+
+    target_store = norm_text(
+        meta[
+            "FILE_RAWDATA_NAME"
+        ]
+    )
+
+
+    if not target_store:
+
+        raise ValueError(
+            "Template 16 無法從檔名取得店家名稱。"
+        )
+
+
+    qty_col = None
+
+
+    # --------------------------------------------------------
+    # First: exact normalized match
+    # --------------------------------------------------------
+
+    for column in df.columns:
+
+        if column in [
+            product_code_col,
+            sku_col,
+        ]:
+
+            continue
+
+
+        if (
+            norm_key(column)
+            ==
+            norm_key(target_store)
+        ):
+
+            qty_col = column
+            break
+
+
+    # --------------------------------------------------------
+    # Second: fallback contains match
+    #
+    # Example:
+    # filename = 東門店
+    # column   = 東門店銷售
+    # --------------------------------------------------------
+
+    if qty_col is None:
+
+        for column in df.columns:
+
+            if column in [
+                product_code_col,
+                sku_col,
+            ]:
+
+                continue
+
+
+            column_key = norm_key(
+                column
+            )
+
+            target_key = norm_key(
+                target_store
+            )
+
+
+            if (
+                target_key
+                and
+                (
+                    target_key
+                    in column_key
+                    or
+                    column_key
+                    in target_key
+                )
+            ):
+
+                qty_col = column
+                break
+
+
+    if qty_col is None:
+
+        raise ValueError(
+            "Template 16 找不到與檔名店家對應的銷量欄位。"
+            f" Rawdata Name={target_store}"
+        )
+
+
+    # ========================================================
+    # 7. Prepare Data
+    # ========================================================
+
+    raw_product_code = (
+        df[
+            product_code_col
+        ]
+        .map(
+            norm_text
+        )
+    )
+
+
+    raw_sku = (
+        df[
+            sku_col
+        ]
+        .map(
+            norm_text
+        )
+    )
+
+
+    qty = numeric(
+        df[
+            qty_col
+        ]
+    )
+
+
+    # ========================================================
+    # 8. Keep Valid Product Rows
+    # ========================================================
+
+    valid = (
+        raw_sku
+        .ne("")
+        &
+        qty
+        .notna()
+    )
+
+
+    df = (
+        df.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    raw_product_code = (
+        raw_product_code.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    raw_sku = (
+        raw_sku.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    qty = (
+        qty.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    # ========================================================
+    # 9. Build Standard Output
+    # ========================================================
+
+    output = base_records(
+        df,
+        meta,
+        "T16_STORE_SALES_MATRIX",
+        uploaded_file.name,
+    )
+
+
+    # ========================================================
+    # 10. Customer
+    # ========================================================
+
+    output[
+        "RAW_CUSTOMER"
+    ] = meta[
+        "FILE_RAWDATA_NAME"
+    ]
+
+
+    output[
+        "RAW_ROW_CUSTOMER"
+    ] = ""
+
+
+    # ========================================================
+    # 11. Product
+    # ========================================================
+
+    output[
+        "RAW_PRODUCT_CODE"
+    ] = raw_product_code
+
+
+    output[
+        "RAW_SKU"
+    ] = raw_sku
+
+
+    # ========================================================
+    # 12. Quantity
+    # ========================================================
+
+    output[
+        "QTY"
+    ] = qty
+
+
+    # ========================================================
+    # 13. Price
+    #
+    # Final report uses SKU Mapping RSP
+    # ========================================================
+
+    output[
+        "UNIT_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "TOTAL_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "RAW_UNIT_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "RAW_TOTAL_PRICE"
+    ] = pd.NA
+
+
+    # ========================================================
+    # 14. Optional Raw Fields
+    # ========================================================
+
+    output[
+        "RAW_BRAND"
+    ] = ""
+
+
+    output[
+        "RAW_SIZE"
+    ] = ""
+
+
+    output[
+        "RAW_CATEGORY"
+    ] = ""
+
+
+    # ========================================================
+    # 15. Audit
+    # ========================================================
+
+    output[
+        "SOURCE_QTY_COLUMN"
+    ] = qty_col
+
+
+    output[
+        "SOURCE_PRICE_COLUMN"
+    ] = "RSP_FROM_SKU_MAPPING"
+
+
+    return output
+
+
+
+
+
+
 
 
 
@@ -7315,6 +7839,130 @@ def detect_template_type(uploaded_file):
         pass
 
 
+
+
+
+
+
+    # ========================================================
+# TEMPLATE 16
+# Store Sales Matrix
+#
+# Example:
+# 產品編號 | 產品品名 | 東門店 | 西門店
+#
+# No normal QTY header.
+# ========================================================
+
+    try:
+    
+        product_code_aliases = [
+            "產品編號",
+            "商品編號",
+            "商品代號",
+            "商品號碼",
+            "貨品編號",
+            "貨品代號",
+            "貨品號碼",
+            "品號",
+        ]
+    
+    
+        product_name_aliases = [
+            "產品品名",
+            "產品名稱",
+            "商品名稱",
+            "品名",
+            "品項名稱",
+        ]
+    
+    
+        template_16_header_row = None
+    
+    
+        for i in range(
+            min(
+                30,
+                len(raw),
+            )
+        ):
+    
+            values = [
+                norm_key(value)
+                for value
+                in raw.iloc[i].tolist()
+                if norm_text(value)
+            ]
+    
+    
+            has_product_code = any(
+                norm_key(alias)
+                in values
+                for alias
+                in product_code_aliases
+            )
+    
+    
+            has_product_name = any(
+                norm_key(alias)
+                in values
+                for alias
+                in product_name_aliases
+            )
+    
+    
+            if (
+                has_product_code
+                and
+                has_product_name
+            ):
+    
+                template_16_header_row = i
+                break
+    
+    
+        if (
+            template_16_header_row
+            is not None
+        ):
+    
+            # ----------------------------------------------------
+            # Important:
+            # Avoid stealing normal T7 files.
+            #
+            # If this row already contains a normal QTY header,
+            # let T7 handle it instead.
+            # ----------------------------------------------------
+    
+            header_values = [
+                norm_key(value)
+                for value
+                in raw.iloc[
+                    template_16_header_row
+                ].tolist()
+                if norm_text(value)
+            ]
+    
+    
+            has_normal_qty_header = any(
+                norm_key(alias)
+                in header_values
+                for alias
+                in STANDARD_HEADER_MAPPING[
+                    "QTY"
+                ]
+            )
+    
+    
+            if not has_normal_qty_header:
+    
+                return "TEMPLATE_16"
+    
+    
+    except Exception:
+    
+        pass
+
     # ========================================================
     # TEMPLATE 7
     # Generic SKU + QTY
@@ -7696,7 +8344,20 @@ def auto_transform_template(uploaded_file):
             result,
             "Template 15｜Multi-sheet SKU / QTY",
         )
-        
+
+
+    elif template_type == "TEMPLATE_16":
+
+    uploaded_file.seek(0)
+
+    result = transform_template_16(
+        uploaded_file
+    )
+
+    return (
+        result,
+        "Template 16｜Store Sales Matrix",
+    )
 
 
     
