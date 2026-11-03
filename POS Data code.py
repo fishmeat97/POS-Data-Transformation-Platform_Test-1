@@ -3378,23 +3378,24 @@ def transform_template_7(uploaded_file):
 # TEMPLATE 8
 # 唯君系列
 #
-# Modified from original Template 8
+# NO BARCODE VERSION
 #
-# NEW Structure:
+# Structure:
 #
-# Product / 商品名稱
-#       ↓
+# Product Description Area
+#        ↓
 # Unit
-#       ↓
+#        ↓
 # Quantity
-#       ↓
+#        ↓
 # Sales Amount
 #
 # IMPORTANT:
-# - NO BARCODE
-# - RAW_SKU directly uses 商品 / 商品名稱 / 品名
-# - QTY header does NOT need to be named
-# - QTY is detected from numeric data after UNIT
+# - 不使用 Barcode
+# - 不要求一定有「商品名稱」Header
+# - 先找 Unit column
+# - Unit 左側文字組合成 RAW_SKU
+# - Unit 右側自動判斷 QTY
 # ============================================================
 
 def transform_template_8(uploaded_file):
@@ -3428,7 +3429,7 @@ def transform_template_8(uploaded_file):
 
 
     # ========================================================
-    # Helper: identify numeric-only cell
+    # Helper: Pure Numeric
     # ========================================================
 
     def is_pure_numeric(value):
@@ -3448,44 +3449,127 @@ def transform_template_8(uploaded_file):
         )
 
 
-        number = pd.to_numeric(
+        value_num = pd.to_numeric(
             cleaned,
             errors="coerce",
         )
 
 
         return pd.notna(
-            number
+            value_num
         )
 
 
     # ========================================================
-    # Product Header Aliases
+    # Helper: Build SKU
+    #
+    # 從 Unit 左側找有效文字
     # ========================================================
 
-    product_aliases = [
-        "商品",
-        "商品名稱",
-        "品名",
-        "品項名稱",
-        "產品名稱",
-        "產品品名",
-        "商品品名",
-        "貨品名稱",
-        "SKU Name",
-        "Product Name",
-    ]
+    def build_sku_from_row(
+        row,
+        start_col,
+        end_col,
+    ):
+
+        parts = []
 
 
-    product_alias_keys = {
-        norm_key(x)
-        for x
-        in product_aliases
-    }
+        for col_idx in range(
+            start_col,
+            end_col,
+        ):
+
+            value = norm_text(
+                row.iloc[
+                    col_idx
+                ]
+            )
+
+
+            if not value:
+
+                continue
+
+
+            # ------------------------------------------------
+            # Skip numeric-only values
+            # ------------------------------------------------
+
+            if is_pure_numeric(
+                value
+            ):
+
+                continue
+
+
+            # ------------------------------------------------
+            # Skip unit
+            # ------------------------------------------------
+
+            if value in {
+                "瓶",
+                "罐",
+                "支",
+                "箱",
+                "盒",
+                "組",
+            }:
+
+                continue
+
+
+            # ------------------------------------------------
+            # Skip obvious labels
+            # ------------------------------------------------
+
+            if norm_key(value) in {
+                norm_key("商品條碼"),
+                norm_key("條碼"),
+                norm_key("Barcode"),
+                norm_key("單位"),
+                norm_key("數量"),
+                norm_key("金額"),
+                norm_key("銷貨金額"),
+            }:
+
+                continue
+
+
+            parts.append(
+                value
+            )
+
+
+        # ----------------------------------------------------
+        # Remove adjacent duplicates
+        # ----------------------------------------------------
+
+        cleaned_parts = []
+
+
+        for part in parts:
+
+            if (
+                not cleaned_parts
+                or
+                part != cleaned_parts[-1]
+            ):
+
+                cleaned_parts.append(
+                    part
+                )
+
+
+        return norm_text(
+            " ".join(
+                cleaned_parts
+            )
+        )
 
 
     # ========================================================
-    # Process Every Sheet
+    # Process Each Sheet
     # ========================================================
 
     for (
@@ -3503,63 +3587,10 @@ def transform_template_8(uploaded_file):
 
 
         # ====================================================
-        # 2. Find Product Column
+        # 2. Find Unit Column
         #
-        # Scan first 20 rows because header location
-        # may be different in each sheet.
-        # ====================================================
-
-        product_col = None
-        header_row = None
-
-
-        for row_idx in range(
-            min(
-                20,
-                len(raw),
-            )
-        ):
-
-            for col_idx in range(
-                raw.shape[1]
-            ):
-
-                value = norm_text(
-                    raw.iloc[
-                        row_idx,
-                        col_idx
-                    ]
-                )
-
-
-                if (
-                    norm_key(value)
-                    in product_alias_keys
-                ):
-
-                    product_col = col_idx
-                    header_row = row_idx
-
-                    break
-
-
-            if product_col is not None:
-
-                break
-
-
-        if product_col is None:
-
-            continue
-
-
-        # ====================================================
-        # 3. Find Unit Column
-        #
-        # Search AFTER Product Column
-        #
-        # Unit values:
-        # 瓶 / 罐 / 支 / 箱 / 盒 / 組
+        # 不需要商品 Header
+        # 不需要 Barcode
         # ====================================================
 
         unit_col = None
@@ -3577,13 +3608,12 @@ def transform_template_8(uploaded_file):
 
 
         for col_idx in range(
-            product_col + 1,
-            raw.shape[1],
+            raw.shape[1]
         ):
 
             series = (
                 raw.iloc[
-                    header_row + 1:,
+                    :,
                     col_idx
                 ]
                 .map(
@@ -3623,67 +3653,40 @@ def transform_template_8(uploaded_file):
 
 
             if (
-                score > best_unit_score
-                and
                 unit_count >= 2
+                and
+                score > best_unit_score
             ):
 
                 best_unit_score = score
                 unit_col = col_idx
 
 
-        # ----------------------------------------------------
-        # Unit 找不到時：
-        #
-        # 不直接失敗。
-        # 從商品欄右側直接找 QTY。
-        # ----------------------------------------------------
+        if unit_col is None:
 
-        if unit_col is not None:
-
-            qty_search_start = (
-                unit_col + 1
-            )
-
-        else:
-
-            qty_search_start = (
-                product_col + 1
-            )
+            continue
 
 
         # ====================================================
-        # 4. Find QTY Column
+        # 3. Find QTY Column
         #
-        # IMPORTANT:
-        # QTY header 可以是 Blank / Unnamed。
+        # Search AFTER Unit
         #
-        # 不看欄位名稱。
-        # 直接分析內容。
-        #
-        # Prefer:
-        # - high numeric ratio
-        # - integer-like
-        # - smaller values
-        # - closer to UNIT / 商品
-        #
-        # Avoid:
-        # - empty columns
-        # - text columns
-        # - amount-like columns
+        # 不看 Header
+        # 直接分析數值
         # ====================================================
 
         qty_candidates = []
 
 
         for col_idx in range(
-            qty_search_start,
+            unit_col + 1,
             raw.shape[1],
         ):
 
             raw_series = (
                 raw.iloc[
-                    header_row + 1:,
+                    :,
                     col_idx
                 ]
                 .map(
@@ -3692,18 +3695,10 @@ def transform_template_8(uploaded_file):
             )
 
 
-            # -----------------------------------------------
-            # Completely blank column
-            # -----------------------------------------------
-
-            non_blank = (
+            non_blank_count = int(
                 raw_series
                 .ne("")
-            )
-
-
-            non_blank_count = int(
-                non_blank.sum()
+                .sum()
             )
 
 
@@ -3712,22 +3707,22 @@ def transform_template_8(uploaded_file):
                 continue
 
 
-            # -----------------------------------------------
-            # Numeric conversion
-            # -----------------------------------------------
-
-            numeric_series = numeric(
+            test_numeric = numeric(
                 raw.iloc[
-                    header_row + 1:,
+                    :,
                     col_idx
                 ]
             )
 
 
-            numeric_count = int(
-                numeric_series
-                .notna()
-                .sum()
+            numeric_values = (
+                test_numeric
+                .dropna()
+            )
+
+
+            numeric_count = len(
+                numeric_values
             )
 
 
@@ -3735,16 +3730,6 @@ def transform_template_8(uploaded_file):
 
                 continue
 
-
-            # -----------------------------------------------
-            # Numeric Ratio
-            #
-            # Use NON-BLANK denominator.
-            #
-            # Important:
-            # Blank cells should not make a good QTY column
-            # look bad.
-            # -----------------------------------------------
 
             numeric_ratio = (
                 numeric_count
@@ -3761,30 +3746,15 @@ def transform_template_8(uploaded_file):
                 continue
 
 
-            valid_numeric = (
-                numeric_series
-                .dropna()
-            )
-
-
-            if valid_numeric.empty:
-
-                continue
-
-
             abs_values = (
-                valid_numeric
+                numeric_values
                 .abs()
             )
 
 
-            # -----------------------------------------------
-            # Integer Ratio
-            # -----------------------------------------------
-
             integer_ratio = (
                 (
-                    valid_numeric
+                    numeric_values
                     % 1
                 )
                 .abs()
@@ -3794,10 +3764,6 @@ def transform_template_8(uploaded_file):
                 .mean()
             )
 
-
-            # -----------------------------------------------
-            # Quantity Profile
-            # -----------------------------------------------
 
             median_value = (
                 abs_values
@@ -3829,9 +3795,9 @@ def transform_template_8(uploaded_file):
             )
 
 
-            # -----------------------------------------------
-            # Score
-            # -----------------------------------------------
+            # =================================================
+            # QTY Score
+            # =================================================
 
             score = (
                 numeric_ratio * 4
@@ -3844,9 +3810,9 @@ def transform_template_8(uploaded_file):
             )
 
 
-            # -----------------------------------------------
-            # Penalize amount-like columns
-            # -----------------------------------------------
+            # -------------------------------------------------
+            # Amount-like penalty
+            # -------------------------------------------------
 
             if median_value > 1000:
 
@@ -3860,17 +3826,17 @@ def transform_template_8(uploaded_file):
 
             if max_value > 100000:
 
-                score -= 4
+                score -= 5
 
 
-            # -----------------------------------------------
-            # Slight preference for nearby columns
-            # -----------------------------------------------
+            # -------------------------------------------------
+            # Prefer column close to Unit
+            # -------------------------------------------------
 
             distance = (
                 col_idx
                 -
-                qty_search_start
+                unit_col
             )
 
 
@@ -3892,9 +3858,6 @@ def transform_template_8(uploaded_file):
                 "numeric_ratio":
                     numeric_ratio,
 
-                "integer_ratio":
-                    integer_ratio,
-
                 "median":
                     median_value,
 
@@ -3904,14 +3867,14 @@ def transform_template_8(uploaded_file):
             })
 
 
-        # ====================================================
-        # Validate QTY
-        # ====================================================
-
         if not qty_candidates:
 
             continue
 
+
+        # ====================================================
+        # Best QTY
+        # ====================================================
 
         qty_candidates = sorted(
             qty_candidates,
@@ -3922,28 +3885,19 @@ def transform_template_8(uploaded_file):
         )
 
 
-        best_qty = (
+        qty_col = (
             qty_candidates[
                 0
-            ]
-        )
-
-
-        qty_col = (
-            best_qty[
+            ][
                 "column"
             ]
         )
 
 
         # ====================================================
-        # 5. Find Amount Column
+        # 4. Find Amount Column
         #
-        # Keep original Template 8 logic:
-        # final numeric-heavy column after QTY.
-        #
-        # Audit only.
-        # Final Report still uses RSP.
+        # Last numeric-heavy column after QTY
         # ====================================================
 
         amount_col = None
@@ -3956,7 +3910,7 @@ def transform_template_8(uploaded_file):
 
             raw_series = (
                 raw.iloc[
-                    header_row + 1:,
+                    :,
                     col_idx
                 ]
                 .map(
@@ -3979,13 +3933,13 @@ def transform_template_8(uploaded_file):
 
             test_numeric = numeric(
                 raw.iloc[
-                    header_row + 1:,
+                    :,
                     col_idx
                 ]
             )
 
 
-            numeric_count = (
+            numeric_count = int(
                 test_numeric
                 .notna()
                 .sum()
@@ -4008,15 +3962,98 @@ def transform_template_8(uploaded_file):
 
 
         # ====================================================
-        # 6. Process Product Rows
+        # 5. Determine Product Area
+        #
+        # Unit 左邊全部可能是商品描述區
+        #
+        # 但不要從 Column 0 全部無腦抓，
+        # 只抓靠近 Unit 的文字區。
+        # ====================================================
+
+        product_start_col = 0
+
+
+        # ----------------------------------------------------
+        # 從 Unit 往左找第一個有大量文字的區域
+        # ----------------------------------------------------
+
+        text_candidate_cols = []
+
+
+        for col_idx in range(
+            0,
+            unit_col,
+        ):
+
+            series = (
+                raw.iloc[
+                    :,
+                    col_idx
+                ]
+                .map(
+                    norm_text
+                )
+            )
+
+
+            nonempty = (
+                series[
+                    series.ne("")
+                ]
+            )
+
+
+            if nonempty.empty:
+
+                continue
+
+
+            text_count = sum(
+                not is_pure_numeric(value)
+                for value
+                in nonempty
+            )
+
+
+            text_ratio = (
+                text_count
+                /
+                len(
+                    nonempty
+                )
+            )
+
+
+            if text_ratio >= 0.30:
+
+                text_candidate_cols.append(
+                    col_idx
+                )
+
+
+        if text_candidate_cols:
+
+            # ------------------------------------------------
+            # 使用靠近 Unit 的最後幾個文字欄
+            # ------------------------------------------------
+
+            product_start_col = max(
+                0,
+                min(
+                    text_candidate_cols
+                ),
+            )
+
+
+        # ====================================================
+        # 6. Process Rows
         # ====================================================
 
         records = []
 
 
         for row_idx in range(
-            header_row + 1,
-            len(raw),
+            len(raw)
         ):
 
             row = raw.iloc[
@@ -4024,17 +4061,16 @@ def transform_template_8(uploaded_file):
             ]
 
 
-            # -----------------------------------------------
+            # =================================================
             # SKU
             #
-            # Directly use Product column.
-            # NO Barcode.
-            # -----------------------------------------------
+            # Unit 左邊的有效文字組合
+            # =================================================
 
-            sku = norm_text(
-                row.iloc[
-                    product_col
-                ]
+            sku = build_sku_from_row(
+                row=row,
+                start_col=product_start_col,
+                end_col=unit_col,
             )
 
 
@@ -4043,23 +4079,20 @@ def transform_template_8(uploaded_file):
                 continue
 
 
-            # -----------------------------------------------
-            # Avoid repeated header rows
-            # -----------------------------------------------
+            # ------------------------------------------------
+            # Skip obvious titles / headers
+            # ------------------------------------------------
 
-            if (
-                norm_key(sku)
-                in product_alias_keys
-            ):
-
-                continue
+            sku_key = norm_key(
+                sku
+            )
 
 
-            # -----------------------------------------------
-            # Avoid obvious summary labels
-            # -----------------------------------------------
-
-            if norm_key(sku) in {
+            if sku_key in {
+                norm_key("商品名稱"),
+                norm_key("商品"),
+                norm_key("品名"),
+                norm_key("品項名稱"),
                 norm_key("合計"),
                 norm_key("總計"),
                 norm_key("TOTAL"),
@@ -4068,9 +4101,9 @@ def transform_template_8(uploaded_file):
                 continue
 
 
-            # -----------------------------------------------
+            # =================================================
             # Quantity
-            # -----------------------------------------------
+            # =================================================
 
             qty_value = numeric(
                 pd.Series([
@@ -4088,9 +4121,33 @@ def transform_template_8(uploaded_file):
                 continue
 
 
-            # -----------------------------------------------
+            # =================================================
+            # Unit
+            # =================================================
+
+            unit_value = norm_text(
+                row.iloc[
+                    unit_col
+                ]
+            )
+
+
+            # ------------------------------------------------
+            # Product rows should normally have valid unit
+            # ------------------------------------------------
+
+            if (
+                unit_value
+                not in
+                unit_values
+            ):
+
+                continue
+
+
+            # =================================================
             # Amount
-            # -----------------------------------------------
+            # =================================================
 
             if amount_col is not None:
 
@@ -4113,7 +4170,6 @@ def transform_template_8(uploaded_file):
 
             records.append({
 
-                # No barcode / product code
                 "RAW_PRODUCT_CODE":
                     "",
 
@@ -4132,15 +4188,8 @@ def transform_template_8(uploaded_file):
                 "SOURCE_SHEET":
                     sheet_name,
 
-                "SOURCE_PRODUCT_COLUMN":
-                    product_col,
-
                 "SOURCE_UNIT_COLUMN":
-                    (
-                        unit_col
-                        if unit_col is not None
-                        else ""
-                    ),
+                    unit_col,
 
                 "SOURCE_QTY_COLUMN":
                     qty_col,
@@ -4176,7 +4225,7 @@ def transform_template_8(uploaded_file):
 
         raise ValueError(
             "Template 8 所有 Sheet 都沒有找到有效的 "
-            "商品名稱 / QTY 結構。"
+            "SKU / Unit / QTY 結構。"
         )
 
 
@@ -4245,8 +4294,6 @@ def transform_template_8(uploaded_file):
 
     # ========================================================
     # 13. Product
-    #
-    # NO BARCODE
     # ========================================================
 
     output[
@@ -4281,11 +4328,7 @@ def transform_template_8(uploaded_file):
 
 
     # ========================================================
-    # 15. Raw Amount
-    #
-    # Audit only.
-    #
-    # Final Report still uses SKU Mapping RSP.
+    # 15. Raw Price
     # ========================================================
 
     output[
@@ -4305,6 +4348,8 @@ def transform_template_8(uploaded_file):
 
     # ========================================================
     # 16. Final Price
+    #
+    # Final report uses SKU Mapping RSP
     # ========================================================
 
     output[
@@ -4318,7 +4363,7 @@ def transform_template_8(uploaded_file):
 
 
     # ========================================================
-    # 17. Optional Raw Fields
+    # 17. Optional Fields
     # ========================================================
 
     output[
@@ -4339,15 +4384,6 @@ def transform_template_8(uploaded_file):
     # ========================================================
     # 18. Audit
     # ========================================================
-
-    output[
-        "SOURCE_PRODUCT_COLUMN"
-    ] = (
-        data[
-            "SOURCE_PRODUCT_COLUMN"
-        ]
-    )
-
 
     output[
         "SOURCE_UNIT_COLUMN"
@@ -4389,10 +4425,6 @@ def transform_template_8(uploaded_file):
 
     output.attrs = {}
 
-
-    # ========================================================
-    # 20. Return
-    # ========================================================
 
     return output
 
