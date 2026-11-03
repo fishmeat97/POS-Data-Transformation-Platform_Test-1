@@ -3374,753 +3374,675 @@ def transform_template_7(uploaded_file):
     return output
 
 # ============================================================
-# ============================================================
-# ============================================================
 # TEMPLATE 8
-# 唯君系列
+# 唯君
 #
-# Generic Multi-sheet Structure Parser
+# NO BARCODE VERSION
 #
-# Structure:
+# Logic:
 #
-# Barcode
-#   ↓
-# Product Name / Specification area
-#   ↓
-# Unit
-#   ↓
-# Quantity
-#   ↓
-# Sales Amount
+# 1. 找商品名稱欄
+# 2. RAW_SKU = 商品名稱
+# 3. 從商品名稱右側開始搜尋 QTY
+# 4. 排除 Blank / Text / Amount-like columns
+# 5. 選擇最像 Quantity 的 numeric column
 #
-# IMPORTANT:
-# SKU may span multiple columns.
-# Therefore SKU is reconstructed from all valid text cells
-# between BARCODE column and UNIT column.
+# Final price:
+# RSP from SKU Mapping
 # ============================================================
 
 def transform_template_8(uploaded_file):
+
+    # ========================================================
+    # 1. Parse Filename
+    # ========================================================
 
     meta = parse_filename(
         uploaded_file.name
     )
 
 
+    suffix = Path(
+        uploaded_file.name
+    ).suffix.lower()
+
+
     # ========================================================
-    # 1. Read All Sheets
+    # 2. Read Raw File
     # ========================================================
 
     uploaded_file.seek(0)
 
-    sheets = pd.read_excel(
-        uploaded_file,
-        sheet_name=None,
-        header=None,
-    )
+
+    if suffix == ".csv":
+
+        raw = read_csv_flexible(
+            uploaded_file,
+            header=None,
+        )
 
 
-    if not sheets:
+    elif suffix == ".xlsx":
+
+        uploaded_file.seek(0)
+
+        raw = pd.read_excel(
+            uploaded_file,
+            sheet_name=0,
+            header=None,
+            engine="openpyxl",
+        )
+
+
+    elif suffix == ".xls":
+
+        try:
+
+            uploaded_file.seek(0)
+
+            raw = pd.read_excel(
+                uploaded_file,
+                sheet_name=0,
+                header=None,
+                engine="xlrd",
+            )
+
+        except Exception:
+
+            uploaded_file.seek(0)
+
+            raw = pd.read_excel(
+                uploaded_file,
+                sheet_name=0,
+                header=None,
+            )
+
+
+    else:
 
         raise ValueError(
-            "Template 8 找不到任何工作表。"
+            f"Template 8 不支援此檔案格式：{suffix}"
         )
 
 
-    frames = []
+    if raw is None:
 
-
-    # ========================================================
-    # Helper: barcode validation
-    # ========================================================
-
-    def is_barcode(value):
-
-        text = norm_text(
-            value
-        )
-
-        if not text:
-            return False
-
-
-        # Excel sometimes reads barcode as 1234567890123.0
-        text = re.sub(
-            r"\.0$",
-            "",
-            text,
+        raise ValueError(
+            "Template 8 讀取結果為 None。"
         )
 
 
-        digits = re.sub(
-            r"\D",
-            "",
-            text,
-        )
+    if raw.empty:
 
-
-        # 唯君商品條碼大多為 8~14 digits
-        return (
-            len(digits) >= 8
-            and
-            len(digits) <= 14
+        raise ValueError(
+            "Template 8 檔案沒有資料。"
         )
 
 
     # ========================================================
-    # Helper: clean barcode
+    # 3. Product Name Aliases
     # ========================================================
 
-    def clean_barcode(value):
-
-        text = norm_text(
-            value
-        )
-
-        text = re.sub(
-            r"\.0$",
-            "",
-            text,
-        )
-
-        return text
-
-
-    # ========================================================
-    # Helper: identify numeric-only cell
-    # ========================================================
-
-    def is_pure_numeric(value):
-
-        text = norm_text(
-            value
-        )
-
-        if not text:
-            return False
-
-
-        cleaned = (
-            text
-            .replace(",", "")
-            .replace("$", "")
-        )
-
-
-        number = pd.to_numeric(
-            cleaned,
-            errors="coerce",
-        )
-
-
-        return pd.notna(
-            number
-        )
+    product_name_aliases = [
+        "商品名稱",
+        "商品",
+        "品名",
+        "品項名稱",
+        "產品名稱",
+        "產品品名",
+        "商品品名",
+        "貨品名稱",
+        "SKU Name",
+        "Product Name",
+    ]
 
 
     # ========================================================
-    # Helper: build SKU from product area
+    # 4. Find Header Row
+    #
+    # 只需要找到商品名稱欄
     # ========================================================
 
-    def build_sku_from_row(
-        row,
-        start_col,
-        end_col,
+    header_row = None
+
+
+    for i in range(
+        min(
+            30,
+            len(raw),
+        )
     ):
 
-        parts = []
+        row_values = [
+            norm_text(value)
+            for value
+            in raw.iloc[i].tolist()
+        ]
 
 
-        for col_idx in range(
-            start_col,
-            end_col,
-        ):
-
-            value = norm_text(
-                row.iloc[
-                    col_idx
-                ]
-            )
+        normalized_values = [
+            norm_key(value)
+            for value
+            in row_values
+            if norm_text(value)
+        ]
 
 
-            if not value:
-                continue
+        has_product_name = any(
+            norm_key(alias)
+            in normalized_values
 
-
-            # -----------------------------------------------
-            # 排除純數字
-            #
-            # 例如：
-            # 0.4
-            # 700
-            # 42.8
-            #
-            # 這些通常是 Excel 格式拆出的
-            # 酒精濃度 / 規格數字
-            #
-            # 避免 RAW_SKU 變成奇怪字串
-            # -----------------------------------------------
-
-            if is_pure_numeric(
-                value
-            ):
-
-                continue
-
-
-            # -----------------------------------------------
-            # 排除單位
-            # -----------------------------------------------
-
-            if value in [
-                "瓶",
-                "罐",
-                "支",
-                "箱",
-                "盒",
-            ]:
-
-                continue
-
-
-            parts.append(
-                value
-            )
-
-
-        # -----------------------------------------------
-        # Remove duplicate adjacent parts
-        # -----------------------------------------------
-
-        cleaned_parts = []
-
-        for part in parts:
-
-            if (
-                not cleaned_parts
-                or
-                part
-                !=
-                cleaned_parts[-1]
-            ):
-
-                cleaned_parts.append(
-                    part
-                )
-
-
-        return norm_text(
-            " ".join(
-                cleaned_parts
-            )
+            for alias
+            in product_name_aliases
         )
 
 
-    # ========================================================
-    # Process Every Sheet
-    # ========================================================
+        if has_product_name:
 
-    for (
-        sheet_name,
-        raw
-    ) in sheets.items():
+            header_row = i
 
-        if (
-            raw is None
-            or
-            raw.empty
-        ):
+            break
 
-            continue
 
-
-        # ====================================================
-        # 2. Find Barcode Column
-        #
-        # Usually first column.
-        # But don't assume.
-        # ====================================================
-
-        barcode_col = None
-
-
-        best_barcode_score = 0
-
-
-        for col_idx in range(
-            raw.shape[1]
-        ):
-
-            series = raw.iloc[
-                1:,
-                col_idx
-            ]
-
-
-            if len(series) == 0:
-                continue
-
-
-            barcode_count = sum(
-                is_barcode(value)
-                for value
-                in series
-            )
-
-
-            score = (
-                barcode_count
-                /
-                max(
-                    len(series),
-                    1,
-                )
-            )
-
-
-            if (
-                score
-                >
-                best_barcode_score
-            ):
-
-                best_barcode_score = score
-
-                barcode_col = col_idx
-
-
-        if (
-            barcode_col is None
-            or
-            best_barcode_score < 0.30
-        ):
-
-            continue
-
-
-        # ====================================================
-        # 3. Find Unit Column
-        #
-        # Find column containing mostly:
-        # 瓶 / 罐 / 支 / 箱
-        # ====================================================
-
-        unit_col = None
-        best_unit_score = 0
-
-
-        unit_values = {
-            "瓶",
-    
-        }
-
-
-        for col_idx in range(
-            barcode_col + 1,
-            raw.shape[1]
-        ):
-
-            series = (
-                raw.iloc[
-                    1:,
-                    col_idx
-                ]
-                .map(
-                    norm_text
-                )
-            )
-
-
-            nonempty = (
-                series[
-                    series.ne("")
-                ]
-            )
-
-
-            if nonempty.empty:
-                continue
-
-
-            unit_count = (
-                nonempty
-                .isin(
-                    unit_values
-                )
-                .sum()
-            )
-
-
-            score = (
-                unit_count
-                /
-                len(
-                    nonempty
-                )
-            )
-
-
-            # Need enough actual rows
-            if (
-                score
-                >
-                best_unit_score
-                and
-                unit_count >= 3
-            ):
-
-                best_unit_score = score
-
-                unit_col = col_idx
-
-
-        if unit_col is None:
-
-            continue
-
-
-        # ====================================================
-        # 4. Find QTY Column
-        #
-        # Search columns AFTER unit.
-        #
-        # QTY should:
-        # - mostly numeric
-        # - be close to UNIT
-        # ====================================================
-
-        qty_col = None
-
-
-        for col_idx in range(
-            unit_col + 1,
-            raw.shape[1]
-        ):
-
-            test_numeric = numeric(
-                raw.iloc[
-                    1:,
-                    col_idx
-                ]
-            )
-
-
-            numeric_count = (
-                test_numeric
-                .notna()
-                .sum()
-            )
-
-
-            total_rows = max(
-                len(
-                    test_numeric
-                ),
-                1,
-            )
-
-
-            numeric_ratio = (
-                numeric_count
-                /
-                total_rows
-            )
-
-
-            # -----------------------------------------------
-            # QTY should cover most product rows
-            # -----------------------------------------------
-
-            if numeric_ratio >= 0.50:
-
-                qty_col = col_idx
-
-                break
-
-
-        if qty_col is None:
-
-            continue
-
-
-        # ====================================================
-        # 5. Find Amount Column
-        #
-        # Usually final numeric-heavy column
-        # ====================================================
-
-        amount_col = None
-
-
-        for col_idx in range(
-            qty_col + 1,
-            raw.shape[1]
-        ):
-
-            test_numeric = numeric(
-                raw.iloc[
-                    1:,
-                    col_idx
-                ]
-            )
-
-
-            numeric_ratio = (
-                test_numeric
-                .notna()
-                .sum()
-                /
-                max(
-                    len(
-                        test_numeric
-                    ),
-                    1,
-                )
-            )
-
-
-            if numeric_ratio >= 0.50:
-
-                amount_col = col_idx
-
-
-        # ====================================================
-        # 6. Process Product Rows
-        # ====================================================
-
-        records = []
-
-
-        for row_idx in range(
-            1,
-            len(raw),
-        ):
-
-            row = raw.iloc[
-                row_idx
-            ]
-
-
-            barcode = row.iloc[
-                barcode_col
-            ]
-
-
-            # -----------------------------------------------
-            # Only real product rows
-            # -----------------------------------------------
-
-            if not is_barcode(
-                barcode
-            ):
-
-                continue
-
-
-            # -----------------------------------------------
-            # Quantity
-            # -----------------------------------------------
-
-            qty_value = numeric(
-                pd.Series([
-                    row.iloc[
-                        qty_col
-                    ]
-                ])
-            ).iloc[0]
-
-
-            if pd.isna(
-                qty_value
-            ):
-
-                continue
-
-
-            # =================================================
-            # SKU
-            #
-            # Everything between barcode and unit,
-            # but only valid text cells
-            # =================================================
-
-            sku = build_sku_from_row(
-                row=row,
-                start_col=barcode_col + 1,
-                end_col=unit_col,
-            )
-
-
-            if not sku:
-
-                continue
-
-
-            # =================================================
-            # Amount
-            # =================================================
-
-            if amount_col is not None:
-
-                amount_value = numeric(
-                    pd.Series([
-                        row.iloc[
-                            amount_col
-                        ]
-                    ])
-                ).iloc[0]
-
-            else:
-
-                amount_value = pd.NA
-
-
-            records.append({
-
-                "RAW_PRODUCT_CODE":
-                    clean_barcode(
-                        barcode
-                    ),
-
-                "RAW_SKU":
-                    sku,
-
-                "QTY":
-                    qty_value,
-
-                "RAW_TOTAL_PRICE":
-                    amount_value,
-
-                "SOURCE_ROW":
-                    row_idx + 1,
-
-                "SOURCE_SHEET":
-                    sheet_name,
-
-                "SOURCE_BARCODE_COLUMN":
-                    barcode_col,
-
-                "SOURCE_UNIT_COLUMN":
-                    unit_col,
-
-                "SOURCE_QTY_COLUMN":
-                    qty_col,
-
-                "SOURCE_AMOUNT_COLUMN":
-                    (
-                        amount_col
-                        if amount_col is not None
-                        else ""
-                    ),
-
-            })
-
-
-        # ====================================================
-        # 7. Sheet Result
-        # ====================================================
-
-        if records:
-
-            frames.append(
-                pd.DataFrame(
-                    records
-                )
-            )
-
-
-    # ========================================================
-    # 8. Validate
-    # ========================================================
-
-    if not frames:
+    if header_row is None:
 
         raise ValueError(
-            "Template 8 所有 Sheet 都沒有找到有效的 "
-            "商品條碼 / SKU / QTY 結構。"
+            "Template 8 找不到商品名稱類型 Header。"
         )
 
 
     # ========================================================
-    # 9. Combine Sheets
+    # 5. Read Again Using Correct Header
     # ========================================================
 
-    data = pd.concat(
-        frames,
-        ignore_index=True,
-        sort=False,
+    uploaded_file.seek(0)
+
+
+    if suffix == ".csv":
+
+        df = read_csv_flexible(
+            uploaded_file,
+            header=header_row,
+        )
+
+
+    elif suffix == ".xlsx":
+
+        uploaded_file.seek(0)
+
+        df = pd.read_excel(
+            uploaded_file,
+            sheet_name=0,
+            header=header_row,
+            engine="openpyxl",
+        )
+
+
+    elif suffix == ".xls":
+
+        try:
+
+            uploaded_file.seek(0)
+
+            df = pd.read_excel(
+                uploaded_file,
+                sheet_name=0,
+                header=header_row,
+                engine="xlrd",
+            )
+
+        except Exception:
+
+            uploaded_file.seek(0)
+
+            df = pd.read_excel(
+                uploaded_file,
+                sheet_name=0,
+                header=header_row,
+            )
+
+
+    else:
+
+        raise ValueError(
+            f"Template 8 不支援此檔案格式：{suffix}"
+        )
+
+
+    if df is None:
+
+        raise ValueError(
+            "Template 8 Header 重新讀取結果為 None。"
+        )
+
+
+    # ========================================================
+    # 6. Clean Column Names
+    # ========================================================
+
+    df.columns = [
+        norm_text(column)
+        for column
+        in df.columns
+    ]
+
+
+    df = (
+        df
+        .dropna(
+            how="all"
+        )
+        .reset_index(
+            drop=True
+        )
     )
 
 
+    if df.empty:
+
+        raise ValueError(
+            "Template 8 Header 後沒有資料。"
+        )
+
+
     # ========================================================
-    # 10. Build Standard Output
+    # 7. Find SKU Column
     # ========================================================
 
-    output = base_records(
-        data,
-        meta,
-        "T8_WEIJUN_STRUCTURE",
-        uploaded_file.name,
+    sku_col = first_matching_column(
+        df,
+        product_name_aliases,
     )
 
 
+    if sku_col is None:
+
+        raise ValueError(
+            "Template 8 找不到商品名稱欄位。"
+            f" Available Columns={list(df.columns)}"
+        )
+
+
     # ========================================================
-    # Source
+    # 8. Find QTY Column
+    #
+    # QTY 欄位不固定
+    #
+    # Strategy:
+    #
+    # 1. 只搜尋 SKU 右側欄位
+    # 2. 排除完全 Blank
+    # 3. Numeric ratio 必須夠高
+    # 4. Prefer integer-like values
+    # 5. Prefer reasonable quantity values
+    # 6. Penalize amount-like columns
     # ========================================================
 
-    output[
-        "SOURCE_ROW"
-    ] = (
-        data[
-            "SOURCE_ROW"
+    columns = list(
+        df.columns
+    )
+
+
+    try:
+
+        sku_col_index = columns.index(
+            sku_col
+        )
+
+
+    except ValueError:
+
+        raise ValueError(
+            "Template 8 無法定位商品名稱欄位。"
+        )
+
+
+    qty_candidates = []
+
+
+    for col_index in range(
+        sku_col_index + 1,
+        len(columns),
+    ):
+
+        column = columns[
+            col_index
+        ]
+
+
+        raw_series = (
+            df[column]
+            .map(
+                norm_text
+            )
+        )
+
+
+        # ====================================================
+        # 8A. Skip Completely Blank Column
+        # ====================================================
+
+        non_blank_mask = (
+            raw_series
+            .ne("")
+        )
+
+
+        non_blank_count = int(
+            non_blank_mask
+            .sum()
+        )
+
+
+        if non_blank_count == 0:
+
+            continue
+
+
+        # ====================================================
+        # 8B. Convert to Numeric
+        # ====================================================
+
+        numeric_series = numeric(
+            df[column]
+        )
+
+
+        numeric_count = int(
+            numeric_series
+            .notna()
+            .sum()
+        )
+
+
+        if numeric_count == 0:
+
+            continue
+
+
+        # ====================================================
+        # 8C. Numeric Ratio
+        # ====================================================
+
+        numeric_ratio = (
+            numeric_count
+            /
+            non_blank_count
+        )
+
+
+        # 至少 60% 非空值可以轉數字
+        if numeric_ratio < 0.60:
+
+            continue
+
+
+        valid_numeric = (
+            numeric_series
+            .dropna()
+        )
+
+
+        if valid_numeric.empty:
+
+            continue
+
+
+        # ====================================================
+        # 8D. Integer Ratio
+        #
+        # QTY 通常接近整數
+        # ====================================================
+
+        integer_ratio = (
+            (
+                valid_numeric
+                % 1
+            )
+            .abs()
+            .lt(
+                0.000001
+            )
+            .mean()
+        )
+
+
+        # ====================================================
+        # 8E. Numeric Profile
+        # ====================================================
+
+        abs_numeric = (
+            valid_numeric
+            .abs()
+        )
+
+
+        median_value = (
+            abs_numeric
+            .median()
+        )
+
+
+        max_value = (
+            abs_numeric
+            .max()
+        )
+
+
+        # ====================================================
+        # 8F. Reasonable QTY Ratio
+        #
+        # 大部分 POS quantity 應低於 5,000
+        # ====================================================
+
+        reasonable_qty_ratio = (
+            abs_numeric
+            .le(
+                5000
+            )
+            .mean()
+        )
+
+
+        # ====================================================
+        # 8G. Small Quantity Ratio
+        #
+        # 再增加一個對一般 QTY 有利的分數
+        # ====================================================
+
+        small_qty_ratio = (
+            abs_numeric
+            .le(
+                500
+            )
+            .mean()
+        )
+
+
+        # ====================================================
+        # 8H. Zero / Normal Quantity
+        #
+        # QTY 可以是 0
+        # ====================================================
+
+        normal_qty_ratio = (
+            abs_numeric
+            .le(
+                10000
+            )
+            .mean()
+        )
+
+
+        # ====================================================
+        # 8I. Score Candidate
+        # ====================================================
+
+        score = (
+            numeric_ratio * 4
+            +
+            integer_ratio * 3
+            +
+            reasonable_qty_ratio * 3
+            +
+            small_qty_ratio * 2
+            +
+            normal_qty_ratio * 1
+        )
+
+
+        # ====================================================
+        # 8J. Penalize Amount-like Columns
+        #
+        # 金額欄通常數值較大
+        # ====================================================
+
+        if median_value > 1000:
+
+            score -= 3
+
+
+        if median_value > 5000:
+
+            score -= 4
+
+
+        if max_value > 100000:
+
+            score -= 5
+
+
+        # ====================================================
+        # 8K. Distance Penalty
+        #
+        # 越靠近 SKU 欄位，稍微提高優先權
+        # ====================================================
+
+        distance = (
+            col_index
+            -
+            sku_col_index
+        )
+
+
+        score -= (
+            distance
+            *
+            0.05
+        )
+
+
+        # ====================================================
+        # Store Candidate
+        # ====================================================
+
+        qty_candidates.append({
+
+            "column":
+                column,
+
+            "index":
+                col_index,
+
+            "score":
+                score,
+
+            "numeric_ratio":
+                numeric_ratio,
+
+            "integer_ratio":
+                integer_ratio,
+
+            "reasonable_qty_ratio":
+                reasonable_qty_ratio,
+
+            "median":
+                median_value,
+
+            "max":
+                max_value,
+
+        })
+
+
+    # ========================================================
+    # 9. Validate QTY Candidates
+    # ========================================================
+
+    if not qty_candidates:
+
+        raise ValueError(
+            "Template 8 找不到可靠的 QTY 欄位。"
+            f" SKU Column={sku_col}"
+            f"｜Available Columns={list(df.columns)}"
+        )
+
+
+    # ========================================================
+    # 10. Sort Candidates
+    #
+    # Highest score first
+    #
+    # If same score:
+    # nearest column first
+    # ========================================================
+
+    qty_candidates = sorted(
+        qty_candidates,
+        key=lambda x: (
+            -x[
+                "score"
+            ],
+            x[
+                "index"
+            ],
+        ),
+    )
+
+
+    best_candidate = (
+        qty_candidates[
+            0
         ]
     )
 
 
-    output[
-        "SOURCE_SHEET"
-    ] = (
-        data[
-            "SOURCE_SHEET"
+    # ========================================================
+    # 11. QTY Confidence Check
+    # ========================================================
+
+    if (
+        best_candidate[
+            "numeric_ratio"
+        ]
+        < 0.60
+        or
+        best_candidate[
+            "score"
+        ]
+        < 5
+    ):
+
+        raise ValueError(
+            "Template 8 QTY 欄位辨識信心不足。"
+            f" Best Candidate={best_candidate}"
+        )
+
+
+    qty_col = (
+        best_candidate[
+            "column"
         ]
     )
 
 
     # ========================================================
-    # Customer
+    # 12. Prepare RAW SKU
     # ========================================================
 
-    output[
-        "RAW_CUSTOMER"
-    ] = (
-        meta[
-            "FILE_RAWDATA_NAME"
-        ]
-    )
-
-
-    output[
-        "RAW_ROW_CUSTOMER"
-    ] = ""
-
-
-    # ========================================================
-    # Product
-    # ========================================================
-
-    output[
-        "RAW_PRODUCT_CODE"
-    ] = (
-        data[
-            "RAW_PRODUCT_CODE"
-        ]
-    )
-
-
-    output[
-        "RAW_SKU"
-    ] = (
-        data[
-            "RAW_SKU"
+    raw_sku = (
+        df[
+            sku_col
         ]
         .map(
             norm_text
@@ -4129,34 +4051,161 @@ def transform_template_8(uploaded_file):
 
 
     # ========================================================
-    # Quantity
+    # 13. Prepare QTY
+    # ========================================================
+
+    qty = numeric(
+        df[
+            qty_col
+        ]
+    )
+
+
+    # ========================================================
+    # 14. Valid Rows
+    # ========================================================
+
+    valid = (
+        raw_sku
+        .ne("")
+        &
+        qty
+        .notna()
+    )
+
+
+    # ========================================================
+    # 15. Apply Filter
+    # ========================================================
+
+    df = (
+        df.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    raw_sku = (
+        raw_sku.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    qty = (
+        qty.loc[
+            valid
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    # ========================================================
+    # 16. Validate Final Rows
+    # ========================================================
+
+    if df.empty:
+
+        raise ValueError(
+            "Template 8 已找到 SKU / QTY 欄位，"
+            "但沒有有效資料。"
+            f" SKU Column={sku_col}"
+            f"｜QTY Column={qty_col}"
+        )
+
+
+    # ========================================================
+    # 17. Build Standard Output
+    # ========================================================
+
+    output = base_records(
+        df,
+        meta,
+        "T8_PRODUCT_QTY",
+        uploaded_file.name,
+    )
+
+
+    # ========================================================
+    # 18. Source Row
+    # ========================================================
+
+    output[
+        "SOURCE_ROW"
+    ] = range(
+        header_row + 2,
+        header_row + 2 + len(df),
+    )
+
+
+    # ========================================================
+    # 19. Customer
+    # ========================================================
+
+    output[
+        "RAW_CUSTOMER"
+    ] = meta[
+        "FILE_RAWDATA_NAME"
+    ]
+
+
+    output[
+        "RAW_ROW_CUSTOMER"
+    ] = ""
+
+
+    # ========================================================
+    # 20. Product Code
+    #
+    # Template 8 no longer uses barcode / product code
+    # ========================================================
+
+    output[
+        "RAW_PRODUCT_CODE"
+    ] = ""
+
+
+    # ========================================================
+    # 21. SKU
+    # ========================================================
+
+    output[
+        "RAW_SKU"
+    ] = raw_sku
+
+
+    # ========================================================
+    # 22. Quantity
     # ========================================================
 
     output[
         "QTY"
-    ] = pd.to_numeric(
-        data[
-            "QTY"
-        ],
-        errors="coerce",
-    )
+    ] = qty
 
 
     # ========================================================
-    # Raw Amount
+    # 23. Price
     #
-    # 最終報表仍使用 RSP 計價
-    # 這裡只保留來源銷貨金額供 audit
+    # Source price not used
+    # Final Report uses SKU Mapping RSP
     # ========================================================
 
     output[
+        "RAW_UNIT_PRICE"
+    ] = pd.NA
+
+
+    output[
         "RAW_TOTAL_PRICE"
-    ] = pd.to_numeric(
-        data[
-            "RAW_TOTAL_PRICE"
-        ],
-        errors="coerce",
-    )
+    ] = pd.NA
 
 
     output[
@@ -4169,13 +4218,8 @@ def transform_template_8(uploaded_file):
     ] = pd.NA
 
 
-    output[
-        "RAW_UNIT_PRICE"
-    ] = pd.NA
-
-
     # ========================================================
-    # Optional
+    # 24. Optional Raw Fields
     # ========================================================
 
     output[
@@ -4194,42 +4238,13 @@ def transform_template_8(uploaded_file):
 
 
     # ========================================================
-    # Audit
+    # 25. Audit
     # ========================================================
 
     output[
-        "SOURCE_BARCODE_COLUMN"
-    ] = (
-        data[
-            "SOURCE_BARCODE_COLUMN"
-        ]
-    )
-
-
-    output[
-        "SOURCE_UNIT_COLUMN"
-    ] = (
-        data[
-            "SOURCE_UNIT_COLUMN"
-        ]
-    )
-
-
-    output[
         "SOURCE_QTY_COLUMN"
-    ] = (
-        data[
-            "SOURCE_QTY_COLUMN"
-        ]
-    )
-
-
-    output[
-        "SOURCE_AMOUNT_COLUMN"
-    ] = (
-        data[
-            "SOURCE_AMOUNT_COLUMN"
-        ]
+    ] = str(
+        qty_col
     )
 
 
@@ -4241,16 +4256,17 @@ def transform_template_8(uploaded_file):
 
 
     # ========================================================
-    # IMPORTANT
-    #
-    # Do NOT put DataFrame inside output.attrs
+    # 26. Clean attrs
     # ========================================================
 
     output.attrs = {}
 
 
+    # ========================================================
+    # 27. Return
+    # ========================================================
+
     return output
-       
 
 
 # ============================================================
