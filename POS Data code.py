@@ -10761,6 +10761,34 @@ if "processing_started" not in st.session_state:
 # Buttons
 # ============================================================
 
+
+st.markdown(
+    """
+    <style>
+    div.stButton > button[kind="primary"] {
+        background-color: #4A4A4A !important;
+        color: white !important;
+        border: 1px solid #4A4A4A !important;
+        font-weight: 600 !important;
+    }
+
+    div.stButton > button[kind="primary"]:hover {
+        background-color: #3A3A3A !important;
+        border-color: #3A3A3A !important;
+        color: white !important;
+    }
+
+    div.stButton > button[kind="primary"]:active {
+        background-color: #2F2F2F !important;
+        border-color: #2F2F2F !important;
+        color: white !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
 col_start, col_reset = st.columns(
     [4, 1]
 )
