@@ -10348,7 +10348,13 @@ def excel_bytes(sheets):
 
 # ============================================================
 # ============================================================
+import io
+import zipfile
+from pathlib import Path
+
+# ============================================================
 # STEP 1 - Upload Monthly Template
+# ZIP + Excel/CSV Dual Mode
 # ============================================================
 
 section_header(
@@ -10357,32 +10363,336 @@ section_header(
     "Upload monthly POS templates",
 )
 
-template_files = st.file_uploader(
-    "可一次上傳多個 Excel / CSV Template",
-    type=["xlsx", "xls", "csv"],
-    accept_multiple_files=True,
-    key="templates",
-    on_change="ignore",
+
+upload_mode = st.radio(
+    "請選擇上傳方式",
+    [
+        "📦 ZIP 批次上傳",
+        "📄 Excel / CSV 多檔上傳",
+    ],
+    horizontal=True,
 )
 
-if template_files:
 
-    total_template_size_mb = (
-        sum(file.size for file in template_files)
-        / 1024
-        / 1024
+template_files = []
+
+
+# ============================================================
+# MODE A - ZIP Upload
+# ============================================================
+
+if upload_mode == "📦 ZIP 批次上傳":
+
+    zip_file = st.file_uploader(
+        "上傳當月份 POS ZIP",
+        type=["zip"],
+        key="pos_zip",
+        on_change="ignore",
     )
 
-    st.caption(
-        f"已選擇 {len(template_files)} 個 Template"
-        f" ｜ 總大小 {total_template_size_mb:.2f} MB"
-    )
+
+    if zip_file is not None:
+
+        try:
+
+            zip_file.seek(0)
+
+            with zipfile.ZipFile(
+                zip_file,
+                "r",
+            ) as z:
+
+                supported_files = []
+
+                ignored_files = []
+
+
+                for file_info in z.infolist():
+
+                    file_name = file_info.filename
+
+
+                    # ========================================
+                    # Ignore folders
+                    # ========================================
+
+                    if file_info.is_dir():
+
+                        continue
+
+
+                    # ========================================
+                    # Ignore macOS hidden files
+                    # ========================================
+
+                    if (
+                        "__MACOSX" in file_name
+                        or
+                        Path(file_name).name.startswith(".")
+                    ):
+
+                        continue
+
+
+                    suffix = (
+                        Path(file_name)
+                        .suffix
+                        .lower()
+                    )
+
+
+                    # ========================================
+                    # Supported Formats
+                    # ========================================
+
+                    if suffix not in [
+                        ".xlsx",
+                        ".xls",
+                        ".csv",
+                    ]:
+
+                        ignored_files.append(
+                            file_name
+                        )
+
+                        continue
+
+
+                    # ========================================
+                    # Read file bytes from ZIP
+                    # ========================================
+
+                    file_bytes = z.read(
+                        file_info
+                    )
+
+
+                    # ========================================
+                    # Convert to BytesIO
+                    # ========================================
+
+                    file_obj = io.BytesIO(
+                        file_bytes
+                    )
+
+
+                    # ========================================
+                    # Preserve original filename
+                    #
+                    # IMPORTANT:
+                    # parse_filename() depends on this
+                    # ========================================
+
+                    file_obj.name = (
+                        Path(file_name).name
+                    )
+
+
+                    # Optional size attribute
+                    file_obj.size = (
+                        len(file_bytes)
+                    )
+
+
+                    supported_files.append(
+                        file_obj
+                    )
+
+
+                template_files = (
+                    supported_files
+                )
+
+
+            # ================================================
+            # ZIP Summary
+            # ================================================
+
+            if template_files:
+
+                total_size_mb = (
+                    sum(
+                        file.size
+                        for file
+                        in template_files
+                    )
+                    /
+                    1024
+                    /
+                    1024
+                )
+
+
+                st.success(
+                    f"ZIP 解壓縮成功："
+                    f"{len(template_files)} 個可處理檔案"
+                )
+
+
+                col1, col2, col3 = st.columns(
+                    3
+                )
+
+
+                col1.metric(
+                    "可處理檔案",
+                    len(template_files),
+                )
+
+
+                col2.metric(
+                    "總大小",
+                    f"{total_size_mb:.2f} MB",
+                )
+
+
+                col3.metric(
+                    "忽略檔案",
+                    len(ignored_files),
+                )
+
+
+                # ============================================
+                # File Preview
+                # ============================================
+
+                with st.expander(
+                    "📂 查看 ZIP 內檔案",
+                    expanded=False,
+                ):
+
+                    preview_rows = []
+
+                    for file in template_files:
+
+                        preview_rows.append({
+
+                            "檔案":
+                                file.name,
+
+                            "大小 KB":
+                                round(
+                                    file.size
+                                    /
+                                    1024,
+                                    1,
+                                ),
+
+                            "格式":
+                                Path(
+                                    file.name
+                                ).suffix.lower(),
+
+                        })
+
+
+                    st.dataframe(
+                        pd.DataFrame(
+                            preview_rows
+                        ),
+                        width="stretch",
+                        hide_index=True,
+                    )
+
+
+                # ============================================
+                # Ignored Files
+                # ============================================
+
+                if ignored_files:
+
+                    with st.expander(
+                        "⚠️ 被忽略的檔案",
+                        expanded=False,
+                    ):
+
+                        for file_name in ignored_files:
+
+                            st.write(
+                                file_name
+                            )
+
+
+            else:
+
+                st.warning(
+                    "ZIP 裡沒有找到可處理的 "
+                    "Excel / CSV 檔案。"
+                )
+
+
+        except zipfile.BadZipFile:
+
+            st.error(
+                "ZIP 檔案無法讀取或已損毀。"
+            )
+
+            st.stop()
+
+
+        except Exception as e:
+
+            st.error(
+                f"ZIP 解壓縮失敗：{e}"
+            )
+
+            st.stop()
+
+
+# ============================================================
+# MODE B - Original Multi-file Upload
+# ============================================================
 
 else:
 
-    st.caption(
-        "系統會自動辨識不同 Template 格式，不需要人工選擇格式。"
+    uploaded_files = st.file_uploader(
+        "可一次上傳多個 Excel / CSV Template",
+        type=[
+            "xlsx",
+            "xls",
+            "csv",
+        ],
+        accept_multiple_files=True,
+        key="templates",
+        on_change="ignore",
     )
+
+
+    if uploaded_files:
+
+        template_files = (
+            uploaded_files
+        )
+
+
+        total_template_size_mb = (
+            sum(
+                file.size
+                for file
+                in template_files
+            )
+            /
+            1024
+            /
+            1024
+        )
+
+
+        st.caption(
+            f"已選擇 "
+            f"{len(template_files)} 個 Template"
+            f" ｜ "
+            f"總大小 "
+            f"{total_template_size_mb:.2f} MB"
+        )
+
+
+    else:
+
+        st.caption(
+            "系統會自動辨識不同 Template 格式，"
+            "不需要人工選擇格式。"
+        )
 
 
 # ============================================================
