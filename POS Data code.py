@@ -10698,11 +10698,23 @@ if (
 # Auto Process All Templates
 # ============================================================
 
+# ============================================================
+# Auto Process All Templates
+# WITH TIMING
+# ============================================================
+import time
 frames = []
 upload_logs = []
 
 
 for file in template_files:
+
+    # ========================================================
+    # Start Timer
+    # ========================================================
+
+    file_start_time = time.perf_counter()
+
 
     meta = parse_filename(
         file.name
@@ -10710,8 +10722,11 @@ for file in template_files:
 
 
     # ========================================================
-    # 1. Detect Template ONCE
+    # 1. TEMPLATE DETECTION
     # ========================================================
+
+    detect_start_time = time.perf_counter()
+
 
     try:
 
@@ -10724,10 +10739,37 @@ for file in template_files:
         )
 
 
+        detect_status = "SUCCESS"
+
+
     except Exception as detect_error:
 
-        detected_type_code = (
-            "DETECTION_ERROR"
+        detected_type_code = "DETECTION_ERROR"
+
+        detect_status = "FAILED"
+
+
+    detect_seconds = (
+        time.perf_counter()
+        -
+        detect_start_time
+    )
+
+
+    # ========================================================
+    # If Detection Failed
+    # ========================================================
+
+    if (
+        detected_type_code
+        ==
+        "DETECTION_ERROR"
+    ):
+
+        total_seconds = (
+            time.perf_counter()
+            -
+            file_start_time
         )
 
 
@@ -10752,6 +10794,21 @@ for file in template_files:
 
             "原始筆數":
                 0,
+
+            "Detect 秒數":
+                round(
+                    detect_seconds,
+                    3,
+                ),
+
+            "Transform 秒數":
+                0,
+
+            "總秒數":
+                round(
+                    total_seconds,
+                    3,
+                ),
 
             "業務代號":
                 meta[
@@ -10790,17 +10847,18 @@ for file in template_files:
 
 
     # ========================================================
-    # 2. Transform
-    #
-    # IMPORTANT:
-    # Pass detected_type_code directly.
-    #
-    # Do NOT detect again.
+    # 2. TRANSFORM
     # ========================================================
+
+    transform_start_time = (
+        time.perf_counter()
+    )
+
 
     try:
 
         file.seek(0)
+
 
         (
             data,
@@ -10811,8 +10869,15 @@ for file in template_files:
         )
 
 
+        transform_seconds = (
+            time.perf_counter()
+            -
+            transform_start_time
+        )
+
+
         # ====================================================
-        # Validate DataFrame
+        # Validate Result
         # ====================================================
 
         if data is None:
@@ -10847,11 +10912,22 @@ for file in template_files:
 
 
         # ====================================================
-        # Store Successful Result
+        # Save Successful Frame
         # ====================================================
 
         frames.append(
             data
+        )
+
+
+        # ====================================================
+        # Total Time
+        # ====================================================
+
+        total_seconds = (
+            time.perf_counter()
+            -
+            file_start_time
         )
 
 
@@ -10874,6 +10950,32 @@ for file in template_files:
 
             "原始筆數":
                 len(data),
+
+            # ================================================
+            # TIMING
+            # ================================================
+
+            "Detect 秒數":
+                round(
+                    detect_seconds,
+                    3,
+                ),
+
+            "Transform 秒數":
+                round(
+                    transform_seconds,
+                    3,
+                ),
+
+            "總秒數":
+                round(
+                    total_seconds,
+                    3,
+                ),
+
+            # ================================================
+            # Filename Metadata
+            # ================================================
 
             "業務代號":
                 meta[
@@ -10914,6 +11016,20 @@ for file in template_files:
 
     except Exception as e:
 
+        transform_seconds = (
+            time.perf_counter()
+            -
+            transform_start_time
+        )
+
+
+        total_seconds = (
+            time.perf_counter()
+            -
+            file_start_time
+        )
+
+
         upload_logs.append({
 
             "檔案":
@@ -10933,6 +11049,32 @@ for file in template_files:
 
             "原始筆數":
                 0,
+
+            # ================================================
+            # TIMING
+            # ================================================
+
+            "Detect 秒數":
+                round(
+                    detect_seconds,
+                    3,
+                ),
+
+            "Transform 秒數":
+                round(
+                    transform_seconds,
+                    3,
+                ),
+
+            "總秒數":
+                round(
+                    total_seconds,
+                    3,
+                ),
+
+            # ================================================
+            # Filename Metadata
+            # ================================================
 
             "業務代號":
                 meta[
