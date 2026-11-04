@@ -10343,9 +10343,6 @@ def excel_bytes(sheets):
 
 
 # ============================================================
-# UI - Template Upload
-# ============================================================
-# ============================================================
 # ============================================================
 # STEP 1 - Upload Monthly Template
 # ============================================================
@@ -10356,40 +10353,26 @@ section_header(
     "Upload monthly POS templates",
 )
 
-
 template_files = st.file_uploader(
     "可一次上傳多個 Excel / CSV Template",
-    type=[
-        "xlsx",
-        "xls",
-        "csv",
-    ],
+    type=["xlsx", "xls", "csv"],
     accept_multiple_files=True,
     key="templates",
     on_change="ignore",
 )
 
-
 if template_files:
 
     total_template_size_mb = (
-        sum(
-            file.size
-            for file
-            in template_files
-        )
-        /
-        1024
-        /
-        1024
+        sum(file.size for file in template_files)
+        / 1024
+        / 1024
     )
-
 
     st.caption(
         f"已選擇 {len(template_files)} 個 Template"
         f" ｜ 總大小 {total_template_size_mb:.2f} MB"
     )
-
 
 else:
 
@@ -10408,21 +10391,14 @@ section_header(
     "Upload customer and SKU mapping files",
 )
 
-
-map_col1, map_col2 = st.columns(
-    2
-)
+map_col1, map_col2 = st.columns(2)
 
 
 with map_col1:
 
     customer_file = st.file_uploader(
         "Customer Mapping",
-        type=[
-            "xlsx",
-            "xls",
-            "csv",
-        ],
+        type=["xlsx", "xls", "csv"],
         key="customer",
         on_change="ignore",
     )
@@ -10432,16 +10408,11 @@ with map_col2:
 
     sku_files = st.file_uploader(
         "SKU Mapping",
-        type=[
-            "xlsx",
-            "xls",
-            "csv",
-        ],
+        type=["xlsx", "xls", "csv"],
         accept_multiple_files=True,
         key="sku",
         on_change="ignore",
     )
-
 
     if sku_files:
 
@@ -10469,21 +10440,20 @@ start_processing = st.button(
 
 
 # ============================================================
-# DO NOT RUN PIPELINE DURING UPLOAD
+# STOP BEFORE HEAVY PROCESSING
 # ============================================================
 
 if not start_processing:
 
     st.info(
-        "請完成 POS Template、Customer Mapping、"
-        "SKU Mapping 上傳後，再按「開始處理資料」。"
+        "請完成所有檔案上傳後，再按「開始處理資料」。"
     )
 
     st.stop()
 
 
 # ============================================================
-# Validation AFTER button click
+# Validate Files
 # ============================================================
 
 if not template_files:
@@ -10514,17 +10484,164 @@ if not sku_files:
 
 
 # ============================================================
-# From HERE:
-#
 # Load Customer Mapping
-# Load SKU Mapping
-# Auto Process All Templates
-# ...
-#
 # ============================================================
 
+try:
+
+    customer_file.seek(0)
+
+    customer_raw = read_mapping_file(
+        customer_file,
+        preferred_sheet="Customer data",
+    )
+
+
+    (
+        customer_map,
+        customer_duplicates,
+    ) = prepare_customer_mapping(
+        customer_raw
+    )
+
+
+except Exception as e:
+
+    st.error(
+        f"Customer Mapping 讀取失敗：{e}"
+    )
+
+    st.stop()
+
+
+# ============================================================
+# Load Multiple SKU Mapping Files
+# ============================================================
+
+try:
+
+    sku_frames = []
+    sku_file_logs = []
+
+
+    for sku_file in sku_files:
+
+        try:
+
+            sku_file.seek(0)
+
+            sku_temp = read_mapping_file(
+                sku_file,
+                preferred_sheet="SKU data",
+            )
+
+
+            if sku_temp is None:
+
+                raise ValueError(
+                    "讀取結果為 None"
+                )
+
+
+            if not isinstance(
+                sku_temp,
+                pd.DataFrame,
+            ):
+
+                raise ValueError(
+                    "讀取結果不是 DataFrame"
+                )
+
+
+            if sku_temp.empty:
+
+                raise ValueError(
+                    "SKU Mapping 沒有資料"
+                )
+
+
+            sku_temp = sku_temp.copy()
+
+
+            sku_temp[
+                "SKU_MAPPING_SOURCE_FILE"
+            ] = sku_file.name
+
+
+            sku_frames.append(
+                sku_temp
+            )
+
+
+            sku_file_logs.append({
+
+                "檔案":
+                    sku_file.name,
+
+                "狀態":
+                    "SUCCESS",
+
+                "筆數":
+                    len(sku_temp),
+
+                "錯誤":
+                    "",
+
+            })
+
+
+        except Exception as file_error:
+
+            sku_file_logs.append({
+
+                "檔案":
+                    sku_file.name,
+
+                "狀態":
+                    "FAILED",
+
+                "筆數":
+                    0,
+
+                "錯誤":
+                    (
+                        f"{type(file_error).__name__}: "
+                        f"{str(file_error)}"
+                    ),
+
+            })
+
+
     # ========================================================
-    # Combine All Successful SKU Mapping Files
+    # Create Log
+    # ========================================================
+
+    sku_upload_log = pd.DataFrame(
+        sku_file_logs
+    )
+
+
+    # ========================================================
+    # At least one file successful
+    # ========================================================
+
+    if not sku_frames:
+
+        st.error(
+            "所有 SKU Mapping 檔案都讀取失敗。"
+        )
+
+        st.dataframe(
+            sku_upload_log,
+            width="stretch",
+            hide_index=True,
+        )
+
+        st.stop()
+
+
+    # ========================================================
+    # Combine
     # ========================================================
 
     sku_raw = pd.concat(
@@ -10533,12 +10650,6 @@ if not sku_files:
         sort=False,
     )
 
-
-    # ========================================================
-    # Prepare SKU Mapping
-    #
-    # 沿用原本 prepare_sku_mapping()
-    # ========================================================
 
     (
         sku_map,
@@ -10554,24 +10665,6 @@ except Exception as e:
         f"SKU Mapping 整併 / Mapping Prepare 失敗：{e}"
     )
 
-
-    # ========================================================
-    # Show File-level Log
-    # 即使 prepare_sku_mapping() 失敗也能看到
-    # ========================================================
-
-    if (
-        "sku_upload_log"
-        in locals()
-    ):
-
-        st.dataframe(
-            sku_upload_log,
-            width="stretch",
-            hide_index=True,
-        )
-
-
     st.stop()
 
 
@@ -10579,10 +10672,7 @@ except Exception as e:
 # SKU Mapping Upload Status
 # ============================================================
 
-if (
-    "sku_upload_log"
-    in locals()
-):
+if "sku_upload_log" in locals():
 
     with st.expander(
         "📦 SKU Mapping 上傳狀況",
@@ -10596,43 +10686,14 @@ if (
         )
 
 
-        # ====================================================
-        # Summary
-        # ====================================================
-
-        sku_success_count = int(
-            sku_upload_log[
-                "狀態"
-            ]
-            .eq(
-                "SUCCESS"
-            )
-            .sum()
-        )
-
-
-        sku_failed_count = int(
-            sku_upload_log[
-                "狀態"
-            ]
-            .eq(
-                "FAILED"
-            )
-            .sum()
-        )
-
-
-        st.caption(
-            f"成功：{sku_success_count} 個 ｜ "
-            f"失敗：{sku_failed_count} 個 ｜ "
-            f"合併後原始資料：{len(sku_raw):,} 筆"
-        )
-
-
 # ============================================================
+# NOW START TEMPLATE PROCESSING
 # ============================================================
-# Auto Process All Templates
-# ============================================================
+
+import time
+
+frames = []
+upload_logs = []
 
 # ============================================================
 # Auto Process All Templates
