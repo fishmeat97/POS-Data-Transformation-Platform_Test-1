@@ -8434,15 +8434,18 @@ def detect_template_type(uploaded_file):
 # Unified Auto Transformer
 # ============================================================
 
-def auto_transform_template(uploaded_file):
+def auto_transform_template(
+    uploaded_file,
+    template_type=None,
+):
 
     uploaded_file.seek(0)
 
-    template_type = detect_template_type(
-        uploaded_file
-    )
+    if template_type is None:
 
-    uploaded_file.seek(0)
+        template_type = detect_template_type(
+            uploaded_file
+        )
 
 
     # ========================================================
