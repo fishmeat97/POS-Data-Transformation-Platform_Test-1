@@ -7,6 +7,10 @@ import pandas as pd
 import streamlit as st
 
 
+import streamlit as st
+
+st.write("Streamlit version:", st.__version__)
+
 # ============================================================
 # UI SECTION HEADER
 # ============================================================
