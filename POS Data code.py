@@ -10710,10 +10710,7 @@ for file in template_files:
 
 
     # ========================================================
-    # 先單獨做 Template Detection
-    #
-    # 這樣即使後面的 transform 失敗，
-    # 我們仍然知道它原本辨識成哪個 Template
+    # 1. Detect Template ONCE
     # ========================================================
 
     try:
@@ -10726,10 +10723,80 @@ for file in template_files:
             )
         )
 
+
     except Exception as detect_error:
 
-        detected_type_code = "DETECTION_ERROR"
+        detected_type_code = (
+            "DETECTION_ERROR"
+        )
 
+
+        upload_logs.append({
+
+            "檔案":
+                file.name,
+
+            "辨識格式":
+                "DETECTION_ERROR",
+
+            "Template Code":
+                "DETECTION_ERROR",
+
+            "狀態":
+                "FAILED",
+
+            "錯誤":
+                str(
+                    detect_error
+                ),
+
+            "原始筆數":
+                0,
+
+            "業務代號":
+                meta[
+                    "FILE_SALES_ID"
+                ],
+
+            "合約編號":
+                meta[
+                    "FILE_CONTRACT_JDE"
+                ],
+
+            "年月":
+                meta[
+                    "FILE_PERIOD"
+                ],
+
+            "店家編號":
+                meta[
+                    "FILE_OUTLET_NO"
+                ],
+
+            "分店/Rawdata Name":
+                meta[
+                    "FILE_RAWDATA_NAME"
+                ],
+
+            "檔名格式":
+                meta[
+                    "FILENAME_STATUS"
+                ],
+
+        })
+
+
+        continue
+
+
+    # ========================================================
+    # 2. Transform
+    #
+    # IMPORTANT:
+    # Pass detected_type_code directly.
+    #
+    # Do NOT detect again.
+    # ========================================================
 
     try:
 
@@ -10739,11 +10806,50 @@ for file in template_files:
             data,
             detected_template,
         ) = auto_transform_template(
-            file
+            file,
+            detected_type_code,
         )
 
+
+        # ====================================================
+        # Validate DataFrame
+        # ====================================================
+
+        if data is None:
+
+            raise ValueError(
+                "Transformer 回傳 None。"
+            )
+
+
+        if not isinstance(
+            data,
+            pd.DataFrame,
+        ):
+
+            raise ValueError(
+                "Transformer 沒有回傳 DataFrame。"
+            )
+
+
+        if data.empty:
+
+            raise ValueError(
+                "Transformer 回傳空 DataFrame。"
+            )
+
+
+        # ====================================================
+        # Clean attrs
+        # ====================================================
+
         data.attrs = {}
-        
+
+
+        # ====================================================
+        # Store Successful Result
+        # ====================================================
+
         frames.append(
             data
         )
@@ -10798,8 +10904,13 @@ for file in template_files:
                 meta[
                     "FILENAME_STATUS"
                 ],
+
         })
 
+
+    # ========================================================
+    # Transform Failed
+    # ========================================================
 
     except Exception as e:
 
@@ -10808,7 +10919,6 @@ for file in template_files:
             "檔案":
                 file.name,
 
-            # 不要再強制 UNKNOWN
             "辨識格式":
                 detected_type_code,
 
@@ -10853,8 +10963,13 @@ for file in template_files:
                 meta[
                     "FILENAME_STATUS"
                 ],
+
         })
 
+
+# ============================================================
+# Upload Log
+# ============================================================
 
 upload_log = pd.DataFrame(
     upload_logs
