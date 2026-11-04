@@ -10746,45 +10746,64 @@ section_header(
 )
 
 
-st.markdown(
-    """
-    <style>
-    div.stButton > button[kind="primary"] {
-        background-color: #4A4A4A !important;
-        color: white !important;
-        border: 1px solid #4A4A4A !important;
-    }
+# ============================================================
+# Persistent State
+# ============================================================
 
-    div.stButton > button[kind="primary"]:hover {
-        background-color: #3A3A3A !important;
-        border-color: #3A3A3A !important;
-        color: white !important;
-    }
+if "processing_started" not in st.session_state:
 
-    div.stButton > button[kind="primary"]:active {
-        background-color: #2F2F2F !important;
-        border-color: #2F2F2F !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-start_processing = st.button(
-    "▶️ 開始處理資料",
-    type="primary",
-    width="stretch",
-)
+    st.session_state[
+        "processing_started"
+    ] = False
 
 
 # ============================================================
-# STOP BEFORE HEAVY PROCESSING
+# Buttons
 # ============================================================
 
-if not start_processing:
+col_start, col_reset = st.columns(
+    [4, 1]
+)
+
+
+with col_start:
+
+    if st.button(
+        "▶️ 開始處理資料",
+        type="primary",
+        width="stretch",
+    ):
+
+        st.session_state[
+            "processing_started"
+        ] = True
+
+
+with col_reset:
+
+    if st.button(
+        "🔄 重設",
+        width="stretch",
+    ):
+
+        st.session_state[
+            "processing_started"
+        ] = False
+
+        st.rerun()
+
+
+# ============================================================
+# Stop Before Processing
+# ============================================================
+
+if not st.session_state[
+    "processing_started"
+]:
 
     st.info(
-        "請完成所有檔案上傳後，再按「開始處理資料」。"
+        "請完成所有檔案上傳後，"
+        "再按「開始處理資料」。"
     )
 
     st.stop()
