@@ -10346,6 +10346,7 @@ def excel_bytes(sheets):
 # UI - Template Upload
 # ============================================================
 # ============================================================
+# ============================================================
 # STEP 1 - Upload Monthly Template
 # ============================================================
 
@@ -10354,6 +10355,7 @@ section_header(
     "上傳當月份資料",
     "Upload monthly POS templates",
 )
+
 
 template_files = st.file_uploader(
     "可一次上傳多個 Excel / CSV Template",
@@ -10364,11 +10366,37 @@ template_files = st.file_uploader(
     ],
     accept_multiple_files=True,
     key="templates",
+    on_change="ignore",
 )
 
-st.caption(
-    "系統會自動辨識不同 Template 格式，不需要人工選擇格式。"
-)
+
+if template_files:
+
+    total_template_size_mb = (
+        sum(
+            file.size
+            for file
+            in template_files
+        )
+        /
+        1024
+        /
+        1024
+    )
+
+
+    st.caption(
+        f"已選擇 {len(template_files)} 個 Template"
+        f" ｜ 總大小 {total_template_size_mb:.2f} MB"
+    )
+
+
+else:
+
+    st.caption(
+        "系統會自動辨識不同 Template 格式，不需要人工選擇格式。"
+    )
+
 
 # ============================================================
 # STEP 2 - Upload Mapping
@@ -10380,7 +10408,11 @@ section_header(
     "Upload customer and SKU mapping files",
 )
 
-map_col1, map_col2 = st.columns(2)
+
+map_col1, map_col2 = st.columns(
+    2
+)
+
 
 with map_col1:
 
@@ -10392,7 +10424,9 @@ with map_col1:
             "csv",
         ],
         key="customer",
+        on_change="ignore",
     )
+
 
 with map_col2:
 
@@ -10405,240 +10439,89 @@ with map_col2:
         ],
         accept_multiple_files=True,
         key="sku",
+        on_change="ignore",
     )
+
 
     if sku_files:
 
         st.caption(
-            f"已上傳 {len(sku_files)} 個 SKU Mapping 檔案"
+            f"已選擇 {len(sku_files)} 個 SKU Mapping 檔案"
         )
 
 
 # ============================================================
-# STEP 3 - DASHBOARD
+# STEP 3 - Start Processing
 # ============================================================
 
 section_header(
     "3",
-    "Monthly Dashboard",
-    "Submission status, mapping quality and data reconciliation",
+    "開始處理",
+    "Process uploaded POS and mapping files",
 )
 
 
+start_processing = st.button(
+    "▶️ 開始處理資料",
+    type="primary",
+    width="stretch",
+)
 
 
 # ============================================================
-# Basic Validation
+# DO NOT RUN PIPELINE DURING UPLOAD
 # ============================================================
-if not template_files:
+
+if not start_processing:
+
     st.info(
+        "請完成 POS Template、Customer Mapping、"
+        "SKU Mapping 上傳後，再按「開始處理資料」。"
+    )
+
+    st.stop()
+
+
+# ============================================================
+# Validation AFTER button click
+# ============================================================
+
+if not template_files:
+
+    st.error(
         "請至少上傳一個當月份 Template。"
     )
-    st.stop()
-
-if (
-    customer_file is None
-    or not sku_files
-):
-
-    st.info(
-        "請上傳 Customer Mapping 與至少一個 SKU Mapping。"
-    )
 
     st.stop()
 
 
-# ============================================================
-# Load Customer Mapping
-# ============================================================
-try:
-    customer_raw = read_mapping_file(
-        customer_file,
-        preferred_sheet="Customer data",
-    )
+if customer_file is None:
 
-    (
-        customer_map,
-        customer_duplicates,
-    ) = prepare_customer_mapping(
-        customer_raw
-    )
-
-except Exception as e:
     st.error(
-        f"Customer Mapping 讀取失敗：{e}"
+        "請上傳 Customer Mapping。"
     )
+
+    st.stop()
+
+
+if not sku_files:
+
+    st.error(
+        "請至少上傳一個 SKU Mapping。"
+    )
+
     st.stop()
 
 
 # ============================================================
+# From HERE:
+#
+# Load Customer Mapping
+# Load SKU Mapping
+# Auto Process All Templates
+# ...
+#
 # ============================================================
-# Load Multiple SKU Mapping Files
-# ============================================================
-
-try:
-
-    sku_frames = []
-    sku_file_logs = []
-
-
-    # ========================================================
-    # Read Each SKU Mapping File
-    # ========================================================
-
-    for sku_file in sku_files:
-
-        try:
-
-            sku_file.seek(0)
-
-            sku_temp = read_mapping_file(
-                sku_file,
-                preferred_sheet="SKU data",
-            )
-
-
-            # =================================================
-            # Validate Read Result
-            # =================================================
-
-            if sku_temp is None:
-
-                raise ValueError(
-                    "讀取結果為 None"
-                )
-
-
-            if not isinstance(
-                sku_temp,
-                pd.DataFrame,
-            ):
-
-                raise ValueError(
-                    "讀取結果不是 DataFrame"
-                )
-
-
-            if sku_temp.empty:
-
-                raise ValueError(
-                    "SKU Mapping 沒有資料"
-                )
-
-
-            # =================================================
-            # Copy
-            # =================================================
-
-            sku_temp = (
-                sku_temp
-                .copy()
-            )
-
-
-            # =================================================
-            # Record Source File
-            #
-            # 未來 Duplicate 可以知道來源檔案
-            # =================================================
-
-            sku_temp[
-                "SKU_MAPPING_SOURCE_FILE"
-            ] = sku_file.name
-
-
-            # =================================================
-            # Add to Merge List
-            # =================================================
-
-            sku_frames.append(
-                sku_temp
-            )
-
-
-            # =================================================
-            # Success Log
-            # =================================================
-
-            sku_file_logs.append({
-
-                "檔案":
-                    sku_file.name,
-
-                "狀態":
-                    "SUCCESS",
-
-                "筆數":
-                    len(
-                        sku_temp
-                    ),
-
-                "錯誤":
-                    "",
-
-            })
-
-
-        except Exception as file_error:
-
-            # =================================================
-            # Failed File
-            #
-            # 單一 SKU Mapping 失敗，
-            # 不影響其他 Mapping File
-            # =================================================
-
-            sku_file_logs.append({
-
-                "檔案":
-                    sku_file.name,
-
-                "狀態":
-                    "FAILED",
-
-                "筆數":
-                    0,
-
-                "錯誤":
-                    (
-                        f"{type(file_error).__name__}: "
-                        f"{str(file_error)}"
-                    ),
-
-            })
-
-
-    # ========================================================
-    # Create Upload Log FIRST
-    #
-    # 即使後面 prepare_sku_mapping 失敗，
-    # 還是可以看到每個檔案的讀取結果
-    # ========================================================
-
-    sku_upload_log = pd.DataFrame(
-        sku_file_logs
-    )
-
-
-    # ========================================================
-    # Validate
-    # 至少一個 SKU Mapping File 成功
-    # ========================================================
-
-    if not sku_frames:
-
-        st.error(
-            "所有 SKU Mapping 檔案都讀取失敗。"
-        )
-
-        st.dataframe(
-            sku_upload_log,
-            width="stretch",
-            hide_index=True,
-        )
-
-        st.stop()
-
 
     # ========================================================
     # Combine All Successful SKU Mapping Files
