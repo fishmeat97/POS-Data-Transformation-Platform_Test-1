@@ -9595,104 +9595,132 @@ def attach_customer_mapping(
     )
 
 
-# ========================================================
-# 6. RESPONSIBLE SALES
-#
-# IMPORTANT:
-# FILE_SALES_ID 不再決定負責業務
-#
-# 負責業務一律來自：
-# FILE_OUTLET_NO
-#     ↓
-# Customer Mapping
-#     ↓
-# Sales ID / Sales
-# ========================================================
-
-merged[
-    "SUBMISSION_CUSTOMER_ID"
-] = (
-    merged[
-        "FILE_OUTLET_NO"
-    ]
-    .map(
-        norm_id_key
-    )
-)
-
-
-merged[
-    "RESPONSIBLE_SALES_ID"
-] = merged.apply(
-    lambda row:
-        (
-            norm_id_key(
-                row["Sales ID"]
-            )
-            if (
-                row[
-                    "CUSTOMER_MAPPING_STATUS"
-                ]
-                == "MAPPED"
-            )
-            else ""
-        ),
-    axis=1,
-)
-
-
-merged[
-    "RESPONSIBLE_SALES"
-] = merged.apply(
-    lambda row:
-        (
-            norm_text(
-                row["Sales"]
-            )
-            if (
-                row[
-                    "CUSTOMER_MAPPING_STATUS"
-                ]
-                == "MAPPED"
-            )
-            else ""
-        ),
-    axis=1,
-)
-
-
-merged[
-    "RESPONSIBLE_SALES_STATUS"
-] = merged[
-    "CUSTOMER_MAPPING_STATUS"
-].map({
-    "MAPPED":
-        "MAPPED",
-
-    "UNMAPPED":
-        "UNMAPPED",
-})
-
-
-# ========================================================
-# Filename Sales ID
-#
-# 只保留 Audit
-# 不再參與 Submission 判斷
-# ========================================================
-
-merged[
-    "FILE_SALES_ID_AUDIT"
-] = (
-    merged[
-        "FILE_SALES_ID"
-    ]
-    .map(
-        norm_id_key
-    )
-)
     # ========================================================
-    # 7. CONTRACT CHECK
+    # 6. RESPONSIBLE SALES
+    #
+    # FILE_SALES_ID 不再決定負責業務
+    #
+    # 負責業務一律來自 Customer Mapping：
+    #
+    # FILE_OUTLET_NO
+    #     ↓
+    # Customer Mapping - Outlet No
+    #     ↓
+    # Sales ID / Sales
+    #
+    # ========================================================
+
+    merged[
+        "SUBMISSION_CUSTOMER_ID"
+    ] = (
+        merged[
+            "FILE_OUTLET_NO"
+        ]
+        .map(
+            norm_id_key
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # Responsible Sales ID
+    # --------------------------------------------------------
+
+    merged[
+        "RESPONSIBLE_SALES_ID"
+    ] = (
+        merged[
+            "Sales ID"
+        ]
+        .fillna("")
+        .map(
+            norm_id_key
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # Responsible Sales Name
+    # --------------------------------------------------------
+
+    merged[
+        "RESPONSIBLE_SALES"
+    ] = (
+        merged[
+            "Sales"
+        ]
+        .fillna("")
+        .map(
+            norm_text
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # Responsible Sales Status
+    #
+    # Customer Mapping 成功
+    # 且有 Sales ID
+    # 才算成功判定負責業務
+    # --------------------------------------------------------
+
+    merged[
+        "RESPONSIBLE_SALES_STATUS"
+    ] = merged.apply(
+        lambda row:
+        (
+            "MAPPED"
+            if (
+                row[
+                    "CUSTOMER_MAPPING_STATUS"
+                ]
+                == "MAPPED"
+                and
+                norm_id_key(
+                    row[
+                        "Sales ID"
+                    ]
+                )
+                != ""
+            )
+            else "UNMAPPED"
+        ),
+        axis=1,
+    )
+
+
+    # ========================================================
+    # 7. FILE SALES ID AUDIT
+    #
+    # 檔名 Sales ID 只保留 Audit
+    # 不再影響：
+    #
+    # - Customer Mapping
+    # - Responsible Sales
+    # - Submission Status
+    # - 業務繳交進度
+    #
+    # ========================================================
+
+    merged[
+        "FILE_SALES_ID_AUDIT"
+    ] = (
+        merged[
+            "FILE_SALES_ID"
+        ]
+        .fillna("")
+        .map(
+            norm_id_key
+        )
+    )
+
+
+    # ========================================================
+    # 8. CONTRACT CHECK
+    #
+    # Audit only
+    #
+    # Contract 不再參與 Submission matching
     # ========================================================
 
     merged[
@@ -9730,7 +9758,13 @@ merged[
 
 
     # ========================================================
-    # 8. OUTLET CHECK
+    # 9. OUTLET CHECK
+    #
+    # 這是最重要的 Customer ID Audit
+    #
+    # FILE_OUTLET_NO
+    # vs
+    # Customer Mapping Outlet No
     # ========================================================
 
     merged[
@@ -9768,7 +9802,12 @@ merged[
 
 
     # ========================================================
-    # 9. RAWDATA NAME CHECK
+    # 10. RAWDATA NAME CHECK
+    #
+    # Audit only
+    #
+    # 因為 Customer Mapping 有 fallback by Rawdata Name
+    # 所以不一定要完全一致才能視為成功 Mapping
     # ========================================================
 
     merged[
@@ -9804,6 +9843,40 @@ merged[
         axis=1,
     )
 
+
+    # ========================================================
+    # 11. CUSTOMER OWNERSHIP CHECK
+    #
+    # 最終判定：
+    # 這份資料是否成功找到真正負責業務
+    # ========================================================
+
+    merged[
+        "CUSTOMER_OWNER_STATUS"
+    ] = merged.apply(
+        lambda row:
+        (
+            "MAPPED"
+            if (
+                row[
+                    "CUSTOMER_MAPPING_STATUS"
+                ]
+                == "MAPPED"
+                and
+                row[
+                    "RESPONSIBLE_SALES_STATUS"
+                ]
+                == "MAPPED"
+            )
+            else "UNMAPPED"
+        ),
+        axis=1,
+    )
+
+
+    # ========================================================
+    # 12. Return
+    # ========================================================
 
     return merged
 
