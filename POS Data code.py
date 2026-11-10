@@ -10624,7 +10624,7 @@ if upload_mode == "📦 ZIP File (批次上傳)":
         except zipfile.BadZipFile:
 
             st.error(
-                "ZIP 檔案無法讀取或已損毀。"
+                "ZIP File error (檔案無法讀取或已損毀)。"
             )
 
             st.stop()
@@ -10701,8 +10701,8 @@ else:
 
 section_header(
     "2",
-    "上傳 Mapping 資料",
     "Upload customer and SKU mapping files",
+    "上傳 Mapping 資料",
 )
 
 map_col1, map_col2 = st.columns(2)
@@ -10741,8 +10741,8 @@ with map_col2:
 
 section_header(
     "3",
-    "開始處理",
     "Process uploaded POS and mapping files",
+    "開始處理",
 )
 
 
@@ -10797,7 +10797,7 @@ col_start, col_reset = st.columns(
 with col_start:
 
     if st.button(
-        "▶️ 開始處理資料",
+        "▶️ Start Processing data",
         type="primary",
         width="stretch",
     ):
@@ -10810,7 +10810,7 @@ with col_start:
 with col_reset:
 
     if st.button(
-        "🔄 重設",
+        "🔄 Reset",
         width="stretch",
     ):
 
@@ -10830,7 +10830,7 @@ if not st.session_state[
 ]:
 
     st.info(
-        "請完成所有檔案上傳後，"
+        "Please make sure that all the mapping files have been uploaded before starting the process"
         "再按「開始處理資料」。"
     )
 
