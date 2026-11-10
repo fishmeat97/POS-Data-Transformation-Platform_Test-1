@@ -11920,15 +11920,40 @@ both_unmapped = int(
 # 改成確認是否能透過 Customer Mapping
 # 判定真正負責業務
 # ============================================================
+# ============================================================
+# ============================================================
+# Unable to Identify Responsible Sales
+# FILE LEVEL
+# ============================================================
 
-customer_owner_unmapped = int(
+unmapped_owner_files = (
     detail[
-        "CUSTOMER_OWNER_STATUS"
+        detail[
+            "CUSTOMER_OWNER_STATUS"
+        ]
+        .eq("UNMAPPED")
     ]
-    .eq("UNMAPPED")
-    .sum()
+    [
+        [
+            "SOURCE_FILE",
+            "FILE_OUTLET_NO",
+            "FILE_RAWDATA_NAME",
+        ]
+    ]
+    .drop_duplicates(
+        subset=[
+            "SOURCE_FILE"
+        ]
+    )
+    .reset_index(
+        drop=True
+    )
 )
 
+
+customer_owner_unmapped = len(
+    unmapped_owner_files
+)
 
 # ============================================================
 # Audit Metrics
@@ -12125,35 +12150,49 @@ else:
 
 
 # ============================================================
-## ============================================================
+# ============================================================
 # Additional Quality Metrics
 # ============================================================
 
 q1, q2, q3 = st.columns(3)
 
-
 with q1:
-
     st.metric(
         "Customer + SKU 同時 Unmapped",
         f"{both_unmapped:,}",
     )
 
-
 with q2:
-
     st.metric(
-        "無法判定負責業務",
+        "無法判定負責業務（檔案）",
         f"{customer_owner_unmapped:,}",
     )
 
-
 with q3:
-
     st.metric(
         "合約編號不一致（Audit）",
         f"{contract_mismatch:,}",
     )
+
+
+# ============================================================
+# Unmapped Responsible Sales - File Detail
+# ============================================================
+
+if customer_owner_unmapped > 0:
+
+    with st.expander(
+        "查看無法判定負責業務的檔案",
+        expanded=False,
+    ):
+
+        st.dataframe(
+            unmapped_owner_files,
+            width="stretch",
+            hide_index=True,
+        )
+
+
 
 
 # ============================================================
