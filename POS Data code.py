@@ -10023,6 +10023,10 @@ def safe_column(
 
 def build_report(detail):
 
+    # ========================================================
+    # 0. INITIALIZE REPORT
+    # ========================================================
+
     report = pd.DataFrame(
         index=detail.index
     )
@@ -10062,6 +10066,16 @@ def build_report(detail):
     )
 
 
+    # ========================================================
+    # Store
+    #
+    # 店家編號：
+    # 使用檔名裡面的 FILE_OUTLET_NO
+    #
+    # 店家名稱：
+    # 使用 Customer Mapping 的 Outlet NAME
+    # ========================================================
+
     report["店家編號"] = safe_column(
         detail,
         "FILE_OUTLET_NO",
@@ -10073,17 +10087,40 @@ def build_report(detail):
         "Outlet NAME",
     )
 
-    report["SKU Mapping Status"] = (
-    detail[
-        "SKU_MAPPING_STATUS"
-    ]
-    .fillna("UNMAPPED")
-    .values
-)
+
+    # ========================================================
+    # 2. SKU MAPPING STATUS
+    #
+    # MAPPED / UNMAPPED
+    # ========================================================
+
+    sku_mapping_status = safe_column(
+        detail,
+        "SKU_MAPPING_STATUS",
+    )
+
+
+    report[
+        "SKU Mapping Status"
+    ] = (
+        sku_mapping_status
+        .fillna("UNMAPPED")
+        .astype(str)
+        .str.strip()
+        .str.upper()
+        .replace(
+            {
+                "": "UNMAPPED",
+                "NAN": "UNMAPPED",
+                "NONE": "UNMAPPED",
+                "<NA>": "UNMAPPED",
+            }
+        )
+    )
 
 
     # ========================================================
-    # 2. SALES QUANTITY
+    # 3. SALES QUANTITY
     # ========================================================
 
     qty = pd.to_numeric(
@@ -10095,13 +10132,21 @@ def build_report(detail):
     )
 
 
-    report["銷量(瓶)"] = qty
+    report[
+        "銷量(瓶)"
+    ] = qty
 
 
     # ========================================================
-    # 3. RSP
+    # 4. RSP / PRICE
     #
-    # All price-related fields use SKU Mapping RSP
+    # IMPORTANT:
+    # 所有 Final Report 價格
+    # 都使用 SKU Mapping RSP
+    #
+    # 單價     = RSP
+    # 建議售價 = RSP
+    # 總價     = QTY × RSP
     # ========================================================
 
     rsp = pd.to_numeric(
@@ -10113,82 +10158,98 @@ def build_report(detail):
     )
 
 
-    # 單價 = RSP
-    report["單價"] = rsp
+    report[
+        "單價"
+    ] = rsp
 
 
-    # 總價 = QTY × RSP
-    report["總價"] = (
+    report[
+        "建議售價"
+    ] = rsp
+
+
+    report[
+        "總價"
+    ] = (
         qty
         *
         rsp
     )
 
 
-    # 建議售價 = RSP
-    report["建議售價"] = rsp
-
-
     # ========================================================
-    # 4. SKU MAPPING FIELDS
+    # 5. SKU MAPPING FIELDS
     # ========================================================
 
-    report["價格帶"] = safe_column(
+    report[
+        "價格帶"
+    ] = safe_column(
         detail,
         "Price Band",
     )
 
 
-    report["製造商"] = safe_column(
+    report[
+        "製造商"
+    ] = safe_column(
         detail,
         "Manufacture",
     )
 
 
-    report["品牌"] = safe_column(
+    report[
+        "品牌"
+    ] = safe_column(
         detail,
         "Brand",
     )
 
 
-    report["統一品項名稱"] = safe_column(
+    report[
+        "統一品項名稱"
+    ] = safe_column(
         detail,
         "Mapping Name",
     )
 
 
     # ========================================================
-    # 5. ORIGINAL SKU NAME
+    # 6. ORIGINAL SKU NAME
     #
-    # 品項 = 原始 Template 商品名稱
-    #
-    # IMPORTANT:
-    # 現在使用「品項」作為合併依據
+    # 品項 = 原始 Template SKU
     # ========================================================
 
-    report["品項"] = safe_column(
+    report[
+        "品項"
+    ] = safe_column(
         detail,
         "RAW_SKU",
     )
 
 
-    report["容量"] = safe_column(
+    report[
+        "容量"
+    ] = safe_column(
         detail,
         "SIZE",
     )
 
 
-    report["品類"] = safe_column(
+    report[
+        "品類"
+    ] = safe_column(
         detail,
         "CATEGORY",
     )
 
 
     # ========================================================
-    # 6. YEAR / MONTH
+    # 7. YEAR / MONTH
     # ========================================================
 
-    report["年"] = pd.to_numeric(
+    report[
+        "年"
+    ] = pd.to_numeric(
         safe_column(
             detail,
             "YEAR",
@@ -10199,7 +10260,9 @@ def build_report(detail):
     )
 
 
-    report["月"] = pd.to_numeric(
+    report[
+        "月"
+    ] = pd.to_numeric(
         safe_column(
             detail,
             "MONTH",
@@ -10211,84 +10274,113 @@ def build_report(detail):
 
 
     # ========================================================
-    # 7. ENSURE ALL OUTPUT COLUMNS EXIST
+    # 8. ENSURE ALL OUTPUT COLUMNS EXIST
+    #
+    # 如果 OUTPUT_COLUMNS 裡有欄位
+    # 但上面沒有建立
+    # 自動補 pd.NA
     # ========================================================
 
     for column in OUTPUT_COLUMNS:
 
         if column not in report.columns:
 
-            report[column] = pd.NA
+            report[
+                column
+            ] = pd.NA
 
 
     # ========================================================
-    # 8. PREPARE QTY
+    # 9. CLEAN / NORMALIZE QTY
     # ========================================================
 
-            report["銷量(瓶)"] = pd.to_numeric(
-                report["銷量(瓶)"],
-                errors="coerce",
-            )
+    report[
+        "銷量(瓶)"
+    ] = pd.to_numeric(
+        report[
+            "銷量(瓶)"
+        ],
+        errors="coerce",
+    )
 
 
     # ========================================================
-    # 9. KEEP ALL ROWS
+    # 10. KEEP ALL ROWS
     #
-    # 不做任何 aggregation
-    # 每一筆原始資料都保留
+    # IMPORTANT:
+    #
+    # 不做 groupby
+    # 不做 aggregation
+    # 不合併相同 SKU
+    #
+    # detail 有幾筆
+    # Final Report 就保留幾筆
     # ========================================================
-            
-            report = (
-            report
-            .copy()
-            .reset_index(
+
+    report = (
+        report
+        .copy()
+        .reset_index(
             drop=True
-            )
-            )
-    
+        )
+    )
+
+
     # ========================================================
-    # 10. FORCE FINAL COLUMN ORDER
+    # 11. FORCE FINAL COLUMN ORDER
     # ========================================================
-    
-            report = report[
-            OUTPUT_COLUMNS
-            ].copy()
-    
-    
+
+    report = report[
+        OUTPUT_COLUMNS
+    ].copy()
+
+
     # ========================================================
-    # 11. OPTIONAL SORT
+    # 12. OPTIONAL SORT
+    #
+    # 只排序
+    # 不會合併或刪除資料
     # ========================================================
-            
-            report = (
-            report
-            .sort_values(
-            by=[
+
+    sort_columns = [
+        column
+        for column in [
             "年",
             "月",
             "店家編號",
             "品項",
-            ],
-            na_position="last",
-            kind="stable",
+        ]
+        if column in report.columns
+    ]
+
+
+    if sort_columns:
+
+        report = (
+            report
+            .sort_values(
+                by=sort_columns,
+                na_position="last",
+                kind="stable",
             )
             .reset_index(
-            drop=True
+                drop=True
             )
-            )
-    
-    
+        )
+
+
     # ========================================================
-    # 12. CLEAN ATTRS
+    # 13. CLEAN ATTRS
     # ========================================================
-    
-            report.attrs = {}
-    
-    
+
+    report.attrs = {}
+
+
     # ========================================================
-    # 13. RETURN
+    # 14. RETURN
     # ========================================================
-    
-            return report
+
+    return report
 # ============================================================
 # Excel Export
 # Removes characters that Excel / openpyxl cannot write.
