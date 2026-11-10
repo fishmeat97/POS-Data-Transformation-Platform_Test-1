@@ -11944,7 +11944,7 @@ d4, d5, d6 = st.columns(3)
 with d1:
 
     st.metric(
-        "🐄 來源資料",
+        "🐄 Source Count (來源資料)",
         f"{source_count:,}",
     )
 
@@ -11952,7 +11952,7 @@ with d1:
 with d2:
 
     st.metric(
-        "🧀 輸出資料",
+        "🧀 Output Count (輸出資料)",
         f"{output_count:,}",
         delta=(
             f"{output_count - source_count:+,}"
@@ -11979,7 +11979,7 @@ with d4:
 with d5:
 
     st.metric(
-        "✔️ 成功檔案",
+        "✔️ Successful Files (成功檔案)",
         f"{successful_files:,}",
     )
 
@@ -11987,7 +11987,7 @@ with d5:
 with d6:
 
     st.metric(
-        "❌ 失敗檔案",
+        "❌ Failed Files (失敗檔案)",
         f"{failed_files:,}",
     )
 
@@ -12029,7 +12029,7 @@ r1, r2, r3 = st.columns(3)
 with r1:
 
     st.metric(
-        "🏪 核對店家",
+        "🏪 Total Store Count (核對店家)",
         f"{total_store_count:,}",
     )
 
@@ -12059,6 +12059,7 @@ if store_check_count == 0:
     st.success(
         "✅ 所有店家銷量核對完成："
         "來源資料與最終輸出總銷量一致。"
+        "Store check count have been validated."
     )
 
 
