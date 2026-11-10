@@ -13596,34 +13596,6 @@ with tabs[4]:
     )
 
 
-# Customer Duplicate Mapping
-with tabs[5]:
-    st.write(
-        f"共 {len(customer_duplicates):,} 筆"
-    )
-
-    st.dataframe(
-        customer_duplicates,
-        use_container_width=True,
-        hide_index=True,
-        height=520,
-    )
-
-
-# SKU Duplicate Mapping
-with tabs[6]:
-    st.write(
-        f"共 {len(sku_duplicates):,} 筆"
-    )
-
-    st.dataframe(
-        sku_duplicates,
-        use_container_width=True,
-        hide_index=True,
-        height=520,
-    )
-
-
 # ============================================================
 # Export Data
 # ============================================================
