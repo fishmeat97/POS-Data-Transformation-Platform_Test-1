@@ -1,6 +1,6 @@
 import io
 import re
-import unicodedataF
+import unicodedata
 from pathlib import Path
 
 import pandas as pd
