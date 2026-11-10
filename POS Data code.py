@@ -10742,7 +10742,7 @@ with map_col2:
 section_header(
     "3",
     "Process uploaded POS and mapping files",
-    "開始處理",
+    "開始處理資料",
 )
 
 
@@ -10830,8 +10830,7 @@ if not st.session_state[
 ]:
 
     st.info(
-        "Please make sure that all the mapping files have been uploaded before starting the process"
-        "再按「開始處理資料」。"
+        "Please make sure that all the mapping files have been uploaded before starting the process."
     )
 
     st.stop()
