@@ -9595,44 +9595,102 @@ def attach_customer_mapping(
     )
 
 
-    # ========================================================
-    # 6. SALES ID CHECK
-    # ========================================================
+# ========================================================
+# 6. RESPONSIBLE SALES
+#
+# IMPORTANT:
+# FILE_SALES_ID 不再決定負責業務
+#
+# 負責業務一律來自：
+# FILE_OUTLET_NO
+#     ↓
+# Customer Mapping
+#     ↓
+# Sales ID / Sales
+# ========================================================
 
+merged[
+    "SUBMISSION_CUSTOMER_ID"
+] = (
     merged[
-        "SALES_ID_CHECK"
-    ] = merged.apply(
-        lambda row:
+        "FILE_OUTLET_NO"
+    ]
+    .map(
+        norm_id_key
+    )
+)
+
+
+merged[
+    "RESPONSIBLE_SALES_ID"
+] = merged.apply(
+    lambda row:
         (
-            "UNMAPPED"
+            norm_id_key(
+                row["Sales ID"]
+            )
             if (
                 row[
                     "CUSTOMER_MAPPING_STATUS"
                 ]
-                == "UNMAPPED"
+                == "MAPPED"
             )
-            else (
-                "MATCH"
-                if (
-                    norm_id_key(
-                        row[
-                            "FILE_SALES_ID"
-                        ]
-                    )
-                    ==
-                    norm_id_key(
-                        row[
-                            "Sales ID"
-                        ]
-                    )
-                )
-                else "MISMATCH"
-            )
+            else ""
         ),
-        axis=1,
+    axis=1,
+)
+
+
+merged[
+    "RESPONSIBLE_SALES"
+] = merged.apply(
+    lambda row:
+        (
+            norm_text(
+                row["Sales"]
+            )
+            if (
+                row[
+                    "CUSTOMER_MAPPING_STATUS"
+                ]
+                == "MAPPED"
+            )
+            else ""
+        ),
+    axis=1,
+)
+
+
+merged[
+    "RESPONSIBLE_SALES_STATUS"
+] = merged[
+    "CUSTOMER_MAPPING_STATUS"
+].map({
+    "MAPPED":
+        "MAPPED",
+
+    "UNMAPPED":
+        "UNMAPPED",
+})
+
+
+# ========================================================
+# Filename Sales ID
+#
+# 只保留 Audit
+# 不再參與 Submission 判斷
+# ========================================================
+
+merged[
+    "FILE_SALES_ID_AUDIT"
+] = (
+    merged[
+        "FILE_SALES_ID"
+    ]
+    .map(
+        norm_id_key
     )
-
-
+)
     # ========================================================
     # 7. CONTRACT CHECK
     # ========================================================
@@ -11775,13 +11833,6 @@ both_unmapped = int(
     .sum()
 )
 
-sales_mismatch = int(
-    detail[
-        "SALES_ID_CHECK"
-    ]
-    .eq("MISMATCH")
-    .sum()
-)
 
 contract_mismatch = int(
     detail[
@@ -12118,6 +12169,15 @@ reporting_period = selected_period
 # 6. EXPECTED SUBMISSION LIST
 #
 # Customer Mapping = 每月應繳名單
+#
+# IMPORTANT:
+# 業務歸屬直接使用 Customer Mapping 裡的：
+# Sales ID / Sales
+#
+# Submission matching 不再使用：
+# - File Sales ID
+# - Contract JDE
+#
 # ============================================================
 
 expected_submission = (
@@ -12138,6 +12198,9 @@ expected_submission = (
 
 # ============================================================
 # 7. REMOVE INVALID OUTLET
+#
+# 沒有 Customer ID / Outlet No 的資料
+# 無法作為應繳店家
 # ============================================================
 
 expected_submission = (
@@ -12146,7 +12209,7 @@ expected_submission = (
             "Outlet No"
         ]
         .map(
-            norm_text
+            norm_id_key
         )
         .ne("")
     ]
@@ -12158,34 +12221,20 @@ expected_submission = (
 # 8. EXPECTED KEYS
 # ============================================================
 
+# ------------------------------------------------------------
+# Reporting Period
+# ------------------------------------------------------------
+
 expected_submission[
     "PERIOD_KEY"
 ] = selected_period
 
 
-expected_submission[
-    "SALES_KEY"
-] = (
-    expected_submission[
-        "Sales ID"
-    ]
-    .map(
-        norm_id_key
-    )
-)
-
-
-expected_submission[
-    "CONTRACT_KEY"
-] = (
-    expected_submission[
-        "Contract JDE"
-    ]
-    .map(
-        norm_id_key
-    )
-)
-
+# ------------------------------------------------------------
+# Customer / Outlet ID
+#
+# 這是新的主要 tracking key
+# ------------------------------------------------------------
 
 expected_submission[
     "OUTLET_TRACKING_KEY"
@@ -12199,10 +12248,51 @@ expected_submission[
 )
 
 
+# ------------------------------------------------------------
+# Responsible Sales
+#
+# 只供 Dashboard / 業務繳交進度使用
+# 不參與 EXPECTED_KEY matching
+# ------------------------------------------------------------
+
+expected_submission[
+    "RESPONSIBLE_SALES_ID"
+] = (
+    expected_submission[
+        "Sales ID"
+    ]
+    .map(
+        norm_id_key
+    )
+)
+
+
+expected_submission[
+    "RESPONSIBLE_SALES"
+] = (
+    expected_submission[
+        "Sales"
+    ]
+    .fillna("")
+    .map(
+        norm_text
+    )
+)
+
+
 # ============================================================
 # 9. EXPECTED KEY
 #
-# YYYYMM | Sales | Contract | Outlet
+# NEW RULE:
+#
+# YYYYMM | Customer ID
+#
+# Example:
+# 202609|32014065
+#
+# 不再使用：
+# Sales ID
+# Contract JDE
 # ============================================================
 
 expected_submission[
@@ -12213,14 +12303,6 @@ expected_submission[
     ]
     + "|"
     + expected_submission[
-        "SALES_KEY"
-    ]
-    + "|"
-    + expected_submission[
-        "CONTRACT_KEY"
-    ]
-    + "|"
-    + expected_submission[
         "OUTLET_TRACKING_KEY"
     ]
 )
@@ -12228,6 +12310,9 @@ expected_submission[
 
 # ============================================================
 # 10. EXPECTED DUPLICATE REMOVAL
+#
+# 同月份 + 同 Customer ID
+# 只算一個應繳店家
 # ============================================================
 
 expected_submission = (
@@ -12243,34 +12328,9 @@ expected_submission = (
     )
 )
 
-
 # ============================================================
 # 11. ACTUAL UPLOAD KEYS
 # ============================================================
-
-actual_upload[
-    "SALES_KEY"
-] = (
-    actual_upload[
-        "業務代號"
-    ]
-    .map(
-        norm_id_key
-    )
-)
-
-
-actual_upload[
-    "CONTRACT_KEY"
-] = (
-    actual_upload[
-        "合約編號"
-    ]
-    .map(
-        norm_id_key
-    )
-)
-
 
 actual_upload[
     "OUTLET_TRACKING_KEY"
@@ -12289,14 +12349,6 @@ actual_upload[
 ] = (
     actual_upload[
         "PERIOD_KEY"
-    ]
-    + "|"
-    + actual_upload[
-        "SALES_KEY"
-    ]
-    + "|"
-    + actual_upload[
-        "CONTRACT_KEY"
     ]
     + "|"
     + actual_upload[
