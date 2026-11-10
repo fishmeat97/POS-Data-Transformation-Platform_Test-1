@@ -13599,7 +13599,9 @@ with tabs[4]:
 # ============================================================
 # Export Data
 # ============================================================
+
 st.divider()
+
 
 # ============================================================
 # STEP 5 - EXPORT
@@ -13607,140 +13609,903 @@ st.divider()
 
 section_header(
     "5",
-    "Export (🎃currently under construction🕸️)",
-    "Download final report, CSV and unmapped records",
+    "Export",
+    "Download final report, audit records and unmapped records",
 )
 
-unmapped_mask = (
+
+# ============================================================
+# 1. EXPORT PERIOD
+#
+# 用 selected_period 當檔名
+# 如果沒有 selected_period，就用 ALL
+# ============================================================
+
+export_period = (
+    str(selected_period)
+    if (
+        "selected_period" in locals()
+        and selected_period
+    )
+    else "ALL"
+)
+
+
+# ============================================================
+# 2. SAFE COLUMN HELPER
+#
+# 避免某些 Template 沒有特定 Audit column
+# 造成 KeyError
+# ============================================================
+
+def existing_columns(
+    dataframe,
+    columns,
+):
+
+    return [
+        column
+        for column in columns
+        if column in dataframe.columns
+    ]
+
+
+# ============================================================
+# 3. DETAIL-LEVEL AUDIT COLUMNS
+#
+# IMPORTANT:
+#
+# detail = 原始 row-level
+# final_report = aggregation 後資料
+#
+# 所以兩者不再直接 concat
+# ============================================================
+
+audit_export_columns = [
+
+    # --------------------------------------------------------
+    # Source
+    # --------------------------------------------------------
+    "SOURCE_FILE",
+    "SOURCE_SHEET",
+    "SOURCE_ROW",
+    "TEMPLATE_TYPE",
+
+    # --------------------------------------------------------
+    # Filename Metadata
+    # --------------------------------------------------------
+    "FILE_PERIOD",
+    "FILE_SALES_ID",
+    "FILE_SALES_ID_AUDIT",
+    "FILE_CONTRACT_JDE",
+    "FILE_OUTLET_NO",
+    "FILE_RAWDATA_NAME",
+
+    # --------------------------------------------------------
+    # Customer Ownership
+    # --------------------------------------------------------
+    "SUBMISSION_CUSTOMER_ID",
+    "RESPONSIBLE_SALES_ID",
+    "RESPONSIBLE_SALES",
+    "RESPONSIBLE_SALES_STATUS",
+    "CUSTOMER_OWNER_STATUS",
+
+    # --------------------------------------------------------
+    # Customer Mapping Result
+    # --------------------------------------------------------
+    "Sales ID",
+    "Sales",
+    "Contract JDE",
+    "Contract NAME",
+    "Outlet No",
+    "Outlet NAME",
+    "Rawdata Name",
+
+    # --------------------------------------------------------
+    # Customer Mapping Status
+    # --------------------------------------------------------
+    "CUSTOMER_MAPPING_STATUS",
+    "OUTLET_CHECK",
+    "CONTRACT_CHECK",
+    "RAWDATA_NAME_CHECK",
+
+    # --------------------------------------------------------
+    # Raw Product
+    # --------------------------------------------------------
+    "RAW_PRODUCT_CODE",
+    "RAW_SKU",
+    "RAW_BRAND",
+    "RAW_SIZE",
+    "RAW_CATEGORY",
+    "QTY",
+
+    # --------------------------------------------------------
+    # SKU Mapping
+    # --------------------------------------------------------
+    "SKU_MAPPING_STATUS",
+    "Mapping Name",
+    "RSP",
+    "Price Band",
+    "Manufacture",
+    "Brand",
+    "SKU Name",
+    "SIZE",
+    "CATEGORY",
+
+    # --------------------------------------------------------
+    # Price Audit
+    # --------------------------------------------------------
+    "RAW_UNIT_PRICE",
+    "RAW_TOTAL_PRICE",
+    "UNIT_PRICE",
+    "TOTAL_PRICE",
+
+    # --------------------------------------------------------
+    # Detection Audit
+    # --------------------------------------------------------
+    "SOURCE_QTY_COLUMN",
+    "SOURCE_PRICE_COLUMN",
+]
+
+
+audit_export_columns = existing_columns(
+    detail,
+    audit_export_columns,
+)
+
+
+# ============================================================
+# 4. COMPLETE AUDIT DETAIL
+#
+# Row-level
+# 不跟 final_report 橫向拼接
+# ============================================================
+
+audit_export = (
+    detail[
+        audit_export_columns
+    ]
+    .copy()
+    .reset_index(
+        drop=True
+    )
+)
+
+
+# ============================================================
+# 5. CUSTOMER UNMAPPED
+# ============================================================
+
+customer_unmapped_mask = (
     detail[
         "CUSTOMER_MAPPING_STATUS"
-    ].eq("UNMAPPED")
-    |
+    ]
+    .eq("UNMAPPED")
+)
+
+
+customer_unmapped_export = (
+    detail.loc[
+        customer_unmapped_mask,
+        audit_export_columns,
+    ]
+    .copy()
+    .reset_index(
+        drop=True
+    )
+)
+
+
+# ============================================================
+# 6. SKU UNMAPPED
+# ============================================================
+
+sku_unmapped_mask = (
     detail[
         "SKU_MAPPING_STATUS"
-    ].eq("UNMAPPED")
+    ]
+    .eq("UNMAPPED")
 )
 
-unmapped = pd.concat(
-    [
-        detail.loc[
-            unmapped_mask,
-            audit_columns,
-        ].reset_index(
-            drop=True
-        ),
 
-        final_report.loc[
-            unmapped_mask
-        ].reset_index(
-            drop=True
-        ),
-    ],
-    axis=1,
-)
-
-audit_export = pd.concat(
-    [
-        detail[
-            audit_columns
-        ].reset_index(
-            drop=True
-        ),
-
-        final_report.reset_index(
-            drop=True
-        ),
-    ],
-    axis=1,
+sku_unmapped_export = (
+    detail.loc[
+        sku_unmapped_mask,
+        audit_export_columns,
+    ]
+    .copy()
+    .reset_index(
+        drop=True
+    )
 )
 
 
 # ============================================================
-# Full Workbook
+# 7. ALL UNMAPPED
+#
+# Customer OR SKU Unmapped
 # ============================================================
-workbook = excel_bytes({
+
+unmapped_mask = (
+    customer_unmapped_mask
+    |
+    sku_unmapped_mask
+)
+
+
+unmapped = (
+    detail.loc[
+        unmapped_mask,
+        audit_export_columns,
+    ]
+    .copy()
+    .reset_index(
+        drop=True
+    )
+)
+
+
+# ============================================================
+# 8. CUSTOMER + SKU BOTH UNMAPPED
+# ============================================================
+
+both_unmapped_mask = (
+    detail[
+        "CUSTOMER_MAPPING_STATUS"
+    ]
+    .eq("UNMAPPED")
+    &
+    detail[
+        "SKU_MAPPING_STATUS"
+    ]
+    .eq("UNMAPPED")
+)
+
+
+both_unmapped_export = (
+    detail.loc[
+        both_unmapped_mask,
+        audit_export_columns,
+    ]
+    .copy()
+    .reset_index(
+        drop=True
+    )
+)
+
+
+# ============================================================
+# 9. RESPONSIBLE SALES / OWNERSHIP AUDIT
+#
+# FILE LEVEL
+#
+# 一個 Source File 只保留一筆
+# ============================================================
+
+ownership_columns = existing_columns(
+    detail,
+    [
+        "SOURCE_FILE",
+
+        # Filename
+        "FILE_PERIOD",
+        "FILE_SALES_ID_AUDIT",
+        "FILE_OUTLET_NO",
+        "FILE_CONTRACT_JDE",
+        "FILE_RAWDATA_NAME",
+
+        # Mapping
+        "Outlet No",
+        "Outlet NAME",
+
+        # True Responsible Sales
+        "RESPONSIBLE_SALES_ID",
+        "RESPONSIBLE_SALES",
+
+        # Status
+        "CUSTOMER_MAPPING_STATUS",
+        "RESPONSIBLE_SALES_STATUS",
+        "CUSTOMER_OWNER_STATUS",
+
+        # Audit
+        "OUTLET_CHECK",
+        "CONTRACT_CHECK",
+        "RAWDATA_NAME_CHECK",
+    ],
+)
+
+
+ownership_audit = (
+    detail[
+        ownership_columns
+    ]
+    .copy()
+)
+
+
+if "SOURCE_FILE" in ownership_audit.columns:
+
+    ownership_audit = (
+        ownership_audit
+        .drop_duplicates(
+            subset=[
+                "SOURCE_FILE"
+            ],
+            keep="first",
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+else:
+
+    ownership_audit = (
+        ownership_audit
+        .drop_duplicates()
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+# ============================================================
+# 10. RENAME OWNERSHIP AUDIT
+#
+# 下載 Excel 比較容易看懂
+# ============================================================
+
+ownership_audit = (
+    ownership_audit
+    .rename(
+        columns={
+
+            "SOURCE_FILE":
+                "檔案",
+
+            "FILE_PERIOD":
+                "年月",
+
+            "FILE_SALES_ID_AUDIT":
+                "檔名業務代號",
+
+            "FILE_OUTLET_NO":
+                "檔名Customer ID",
+
+            "FILE_CONTRACT_JDE":
+                "檔名合約編號",
+
+            "FILE_RAWDATA_NAME":
+                "檔名店家名稱",
+
+            "Outlet No":
+                "Mapping Customer ID",
+
+            "Outlet NAME":
+                "Mapping 店家名稱",
+
+            "RESPONSIBLE_SALES_ID":
+                "負責業務代號",
+
+            "RESPONSIBLE_SALES":
+                "負責業務",
+
+            "CUSTOMER_MAPPING_STATUS":
+                "Customer Mapping",
+
+            "RESPONSIBLE_SALES_STATUS":
+                "負責業務 Mapping",
+
+            "CUSTOMER_OWNER_STATUS":
+                "業務歸屬狀態",
+
+            "OUTLET_CHECK":
+                "Customer ID Check",
+
+            "CONTRACT_CHECK":
+                "Contract Check",
+
+            "RAWDATA_NAME_CHECK":
+                "店名 Check",
+        }
+    )
+)
+
+
+# ============================================================
+# 11. UNMAPPED RESPONSIBLE SALES
+#
+# FILE LEVEL
+# ============================================================
+
+if "業務歸屬狀態" in ownership_audit.columns:
+
+    unmapped_owner_export = (
+        ownership_audit[
+            ownership_audit[
+                "業務歸屬狀態"
+            ]
+            .eq("UNMAPPED")
+        ]
+        .copy()
+        .reset_index(
+            drop=True
+        )
+    )
+
+else:
+
+    unmapped_owner_export = pd.DataFrame()
+
+
+# ============================================================
+# 12. SUBMISSION TRACKER
+#
+# 現在真正的 submission tracking dataframe
+# 是 submission_detail
+#
+# 不再使用舊的 submission 變數
+# ============================================================
+
+if (
+    "submission_detail"
+    in locals()
+    and
+    isinstance(
+        submission_detail,
+        pd.DataFrame,
+    )
+):
+
+    submission_export = (
+        submission_detail
+        .copy()
+        .reset_index(
+            drop=True
+        )
+    )
+
+else:
+
+    submission_export = pd.DataFrame()
+
+
+# ============================================================
+# 13. SALES SUBMISSION SUMMARY
+# ============================================================
+
+if (
+    "sales_submission"
+    in locals()
+    and
+    isinstance(
+        sales_submission,
+        pd.DataFrame,
+    )
+):
+
+    sales_submission_export = (
+        sales_submission
+        .copy()
+        .reset_index(
+            drop=True
+        )
+    )
+
+else:
+
+    sales_submission_export = (
+        pd.DataFrame()
+    )
+
+
+# ============================================================
+# 14. UNMATCHED UPLOAD
+#
+# 有上傳，但 Customer ID 無法對 Customer Mapping
+# ============================================================
+
+if (
+    "unmatched_uploads"
+    in locals()
+    and
+    isinstance(
+        unmatched_uploads,
+        pd.DataFrame,
+    )
+):
+
+    unmatched_upload_export = (
+        unmatched_uploads
+        .copy()
+        .reset_index(
+            drop=True
+        )
+    )
+
+else:
+
+    unmatched_upload_export = (
+        pd.DataFrame()
+    )
+
+
+# ============================================================
+# 15. STORE RECONCILIATION
+# ============================================================
+
+if (
+    "store_reconciliation"
+    in locals()
+    and
+    isinstance(
+        store_reconciliation,
+        pd.DataFrame,
+    )
+):
+
+    store_reconciliation_export = (
+        store_reconciliation
+        .copy()
+        .reset_index(
+            drop=True
+        )
+    )
+
+else:
+
+    store_reconciliation_export = (
+        pd.DataFrame()
+    )
+
+
+# ============================================================
+# 16. CLEAN DATAFRAME ATTRS
+#
+# 避免 Excel / Arrow serialization 問題
+# ============================================================
+
+export_dataframes = [
+    final_report,
+    upload_log,
+    submission_export,
+    sales_submission_export,
+    unmapped,
+    customer_unmapped_export,
+    sku_unmapped_export,
+    both_unmapped_export,
+    audit_export,
+    ownership_audit,
+    unmapped_owner_export,
+    unmatched_upload_export,
+    customer_duplicates,
+    sku_duplicates,
+    store_reconciliation_export,
+]
+
+
+for dataframe in export_dataframes:
+
+    if isinstance(
+        dataframe,
+        pd.DataFrame,
+    ):
+
+        dataframe.attrs = {}
+
+
+# ============================================================
+# 17. FULL WORKBOOK
+# ============================================================
+
+workbook_sheets = {
+
+    # --------------------------------------------------------
+    # Main Report
+    # --------------------------------------------------------
     "Final Report":
         final_report,
 
+    # --------------------------------------------------------
+    # File Processing
+    # --------------------------------------------------------
     "Upload Log":
         upload_log,
 
+    # --------------------------------------------------------
+    # Submission Tracking
+    # --------------------------------------------------------
     "Submission Tracker":
-        submission,
+        submission_export,
 
-    "Unmapped":
+    "Sales Submission":
+        sales_submission_export,
+
+    # --------------------------------------------------------
+    # Mapping Problems
+    # --------------------------------------------------------
+    "All Unmapped":
         unmapped,
 
+    "Customer Unmapped":
+        customer_unmapped_export,
+
+    "SKU Unmapped":
+        sku_unmapped_export,
+
+    "Both Unmapped":
+        both_unmapped_export,
+
+    # --------------------------------------------------------
+    # Audit
+    # --------------------------------------------------------
     "Audit Detail":
         audit_export,
 
-    "Customer Map Duplicates":
+    "Sales Ownership Audit":
+        ownership_audit,
+
+    "Owner Unmapped":
+        unmapped_owner_export,
+
+    "Unmatched Upload":
+        unmatched_upload_export,
+
+    # --------------------------------------------------------
+    # Duplicate Mapping
+    # --------------------------------------------------------
+    "Customer Duplicates":
         customer_duplicates,
 
-    "SKU Map Duplicates":
+    "SKU Duplicates":
         sku_duplicates,
-})
+
+    # --------------------------------------------------------
+    # Reconciliation
+    # --------------------------------------------------------
+    "Store Reconciliation":
+        store_reconciliation_export,
+}
 
 
 # ============================================================
-# Download Buttons
+# 18. REMOVE EMPTY OPTIONAL SHEETS
+#
+# Final Report / Upload Log 保留
+# 其他完全空白的 sheet 可以拿掉
 # ============================================================
+
+required_sheet_names = {
+    "Final Report",
+    "Upload Log",
+}
+
+
+workbook_sheets = {
+
+    sheet_name:
+        dataframe
+
+    for (
+        sheet_name,
+        dataframe
+    )
+    in workbook_sheets.items()
+
+    if (
+        sheet_name
+        in required_sheet_names
+        or
+        (
+            isinstance(
+                dataframe,
+                pd.DataFrame,
+            )
+            and
+            not dataframe.empty
+        )
+    )
+}
+
+
+# ============================================================
+# 19. GENERATE FULL EXCEL
+# ============================================================
+
+workbook = excel_bytes(
+    workbook_sheets
+)
+
+
+# ============================================================
+# 20. FINAL CSV
+# ============================================================
+
+final_csv = (
+    final_report
+    .to_csv(
+        index=False
+    )
+    .encode(
+        "utf-8-sig"
+    )
+)
+
+
+# ============================================================
+# 21. UNMAPPED WORKBOOK
+#
+# 獨立 Unmapped Excel
+# ============================================================
+
+unmapped_workbook_sheets = {
+
+    "All Unmapped":
+        unmapped,
+
+    "Customer Unmapped":
+        customer_unmapped_export,
+
+    "SKU Unmapped":
+        sku_unmapped_export,
+
+    "Both Unmapped":
+        both_unmapped_export,
+
+    "Owner Unmapped":
+        unmapped_owner_export,
+}
+
+
+unmapped_workbook_sheets = {
+
+    sheet_name:
+        dataframe
+
+    for (
+        sheet_name,
+        dataframe
+    )
+    in unmapped_workbook_sheets.items()
+
+    if (
+        isinstance(
+            dataframe,
+            pd.DataFrame,
+        )
+        and
+        not dataframe.empty
+    )
+}
+
+
+# 如果完全沒有 Unmapped
+if not unmapped_workbook_sheets:
+
+    unmapped_workbook_sheets = {
+
+        "Unmapped":
+            pd.DataFrame({
+                "Status": [
+                    "No unmapped records"
+                ]
+            })
+    }
+
+
+unmapped_workbook = excel_bytes(
+    unmapped_workbook_sheets
+)
+
+
+# ============================================================
+# 22. EXPORT SUMMARY
+# ============================================================
+
+export_summary_col1, export_summary_col2, export_summary_col3 = (
+    st.columns(3)
+)
+
+
+with export_summary_col1:
+
+    st.metric(
+        "Final Report",
+        f"{len(final_report):,}",
+    )
+
+
+with export_summary_col2:
+
+    st.metric(
+        "Unmapped Rows",
+        f"{len(unmapped):,}",
+    )
+
+
+with export_summary_col3:
+
+    st.metric(
+        "Owner Unmapped Files",
+        f"{len(unmapped_owner_export):,}",
+    )
+
+
+# ============================================================
+# 23. DOWNLOAD BUTTONS
+# ============================================================
+
 export_col1, export_col2, export_col3 = (
     st.columns(3)
 )
 
+
+# ------------------------------------------------------------
+# Full Excel
+# ------------------------------------------------------------
+
 with export_col1:
+
     st.download_button(
-        "下載完整 Excel",
+        "📥 下載完整 Excel",
         data=workbook,
         file_name=(
-            "POS_Monthly_Report.xlsx"
+            f"POS_Monthly_Report_"
+            f"{export_period}.xlsx"
         ),
         mime=(
             "application/"
             "vnd.openxmlformats-officedocument."
             "spreadsheetml.sheet"
         ),
-        use_container_width=True,
+        width="stretch",
+
+        # Streamlit 1.66+
+        # Download 時不要重新跑整支程式
+        on_click="ignore",
     )
+
+
+# ------------------------------------------------------------
+# Final CSV
+# ------------------------------------------------------------
 
 with export_col2:
+
     st.download_button(
-        "下載 Final CSV",
-        data=(
-            final_report
-            .to_csv(
-                index=False
-            )
-            .encode(
-                "utf-8-sig"
-            )
-        ),
+        "📄 下載 Final CSV",
+        data=final_csv,
         file_name=(
-            "POS_Monthly_Final.csv"
+            f"POS_Monthly_Final_"
+            f"{export_period}.csv"
         ),
         mime="text/csv",
-        use_container_width=True,
+        width="stretch",
+        on_click="ignore",
     )
 
+
+# ------------------------------------------------------------
+# Unmapped Excel
+# ------------------------------------------------------------
+
 with export_col3:
+
     st.download_button(
-        "下載 Unmapped Excel",
-        data=excel_bytes({
-            "Unmapped":
-                unmapped
-        }),
+        "⚠️ 下載 Unmapped Excel",
+        data=unmapped_workbook,
         file_name=(
-            "POS_Unmapped.xlsx"
+            f"POS_Unmapped_"
+            f"{export_period}.xlsx"
         ),
         mime=(
             "application/"
             "vnd.openxmlformats-officedocument."
             "spreadsheetml.sheet"
         ),
-        use_container_width=True,
+        width="stretch",
+        on_click="ignore",
     )
-
 
 # ============================================================
 # Protection Notes
