@@ -10379,29 +10379,29 @@ def build_report(detail):
 }
 
 
-        # ====================================================
-        # Recalculate Total Price
-        #
-        # 總價 = 合併後 QTY × RSP
-        # ====================================================
+    # ====================================================
+    # Recalculate Total Price
+    #
+    # 總價 = 合併後 QTY × RSP
+    # ====================================================
 
-        sku_report[
-            "總價"
-        ] = (
-            pd.to_numeric(
-                sku_report[
-                    "銷量(瓶)"
-                ],
-                errors="coerce",
-            )
-            *
-            pd.to_numeric(
-                sku_report[
-                    "單價"
-                ],
-                errors="coerce",
-            )
+    sku_report[
+        "總價"
+    ] = (
+        pd.to_numeric(
+            sku_report[
+                "銷量(瓶)"
+            ],
+            errors="coerce",
         )
+        *
+        pd.to_numeric(
+            sku_report[
+                "單價"
+            ],
+            errors="coerce",
+        )
+    )
 
 
     # ========================================================
