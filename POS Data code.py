@@ -162,6 +162,7 @@ OUTPUT_COLUMNS = [
     "品牌",
     "統一品項名稱",
     "品項",
+    "SKU Mapping Status",
     "容量",
     "品類",
     "年",
@@ -10072,6 +10073,14 @@ def build_report(detail):
         "Outlet NAME",
     )
 
+    report["SKU Mapping Status"] = (
+    detail[
+        "SKU_MAPPING_STATUS"
+    ]
+    .fillna("UNMAPPED")
+    .values
+)
+
 
     # ========================================================
     # 2. SALES QUANTITY
@@ -10311,55 +10320,63 @@ def build_report(detail):
 
     if not sku_report.empty:
 
-        agg_rules = {
+       agg_rules = {
 
-            # =================================================
-            # Quantity
-            # =================================================
+    # =================================================
+    # Quantity
+    # =================================================
 
-            "銷量(瓶)": "sum",
-
-
-            # =================================================
-            # Price
-            #
-            # Same RAW SKU should normally have same RSP
-            # =================================================
-
-            "單價": "first",
-
-            "建議售價": "first",
+    "銷量(瓶)": "sum",
 
 
-            # =================================================
-            # SKU Mapping Fields
-            # =================================================
+    # =================================================
+    # Price
+    # =================================================
 
-            "價格帶": "first",
+    "單價": "first",
 
-            "製造商": "first",
-
-            "品牌": "first",
-
-            "統一品項名稱": "first",
-
-            "容量": "first",
-
-            "品類": "first",
-        }
+    "建議售價": "first",
 
 
-        sku_report = (
-            sku_report
-            .groupby(
-                group_cols,
-                dropna=False,
-                as_index=False,
-            )
-            .agg(
-                agg_rules
-            )
-        )
+    # =================================================
+    # SKU Mapping Status
+    #
+    # 同一個 品項 group 裡
+    # 只要有任何一筆 UNMAPPED
+    # 最終就標記為 UNMAPPED
+    # =================================================
+
+    "SKU Mapping Status":
+        lambda x:
+            (
+                "UNMAPPED"
+                if (
+                    x.fillna("UNMAPPED")
+                    .astype(str)
+                    .str.upper()
+                    .eq("UNMAPPED")
+                    .any()
+                )
+                else "MAPPED"
+            ),
+
+
+    # =================================================
+    # SKU Mapping Fields
+    # =================================================
+
+    "價格帶": "first",
+
+    "製造商": "first",
+
+    "品牌": "first",
+
+    "統一品項名稱": "first",
+
+    "容量": "first",
+
+    "品類": "first",
+}
 
 
         # ====================================================
