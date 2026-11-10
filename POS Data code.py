@@ -10453,26 +10453,214 @@ def build_report(detail):
 # ============================================================
 # Excel Export
 # ============================================================
+# ============================================================
+# Excel Export
+# Safe Version
+#
+# Removes characters that Excel / openpyxl cannot write.
+# ============================================================
+
+import io
+import re
+import pandas as pd
+
+
+# ============================================================
+# Illegal XML / Excel Characters
+#
+# Excel XML 不允許：
+# \x00-\x08
+# \x0B-\x0C
+# \x0E-\x1F
+# ============================================================
+
+ILLEGAL_EXCEL_CHARACTERS_RE = re.compile(
+    r"[\x00-\x08\x0B\x0C\x0E-\x1F]"
+)
+
+
+def clean_excel_value(value):
+
+    # --------------------------------------------------------
+    # Keep NaN / None
+    # --------------------------------------------------------
+
+    if pd.isna(value):
+
+        return value
+
+
+    # --------------------------------------------------------
+    # Only clean strings
+    # --------------------------------------------------------
+
+    if isinstance(
+        value,
+        str,
+    ):
+
+        value = (
+            ILLEGAL_EXCEL_CHARACTERS_RE
+            .sub(
+                "",
+                value,
+            )
+        )
+
+
+        # Excel cell text limit = 32,767 characters
+        if len(value) > 32767:
+
+            value = value[:32767]
+
+
+    return value
+
+
+# ============================================================
+# Clean DataFrame Before Excel Export
+# ============================================================
+
+def clean_dataframe_for_excel(df):
+
+    if df is None:
+
+        return pd.DataFrame()
+
+
+    if not isinstance(
+        df,
+        pd.DataFrame,
+    ):
+
+        return pd.DataFrame(
+            df
+        )
+
+
+    cleaned = df.copy()
+
+
+    # --------------------------------------------------------
+    # Clean column names
+    # --------------------------------------------------------
+
+    cleaned.columns = [
+        clean_excel_value(
+            str(column)
+        )
+        for column
+        in cleaned.columns
+    ]
+
+
+    # --------------------------------------------------------
+    # Clean object / string columns only
+    # --------------------------------------------------------
+
+    for column in cleaned.columns:
+
+        if (
+            pd.api.types.is_object_dtype(
+                cleaned[column]
+            )
+            or
+            pd.api.types.is_string_dtype(
+                cleaned[column]
+            )
+        ):
+
+            cleaned[column] = (
+                cleaned[column]
+                .map(
+                    clean_excel_value
+                )
+            )
+
+
+    cleaned.attrs = {}
+
+
+    return cleaned
+
+
+# ============================================================
+# Excel Export
+# ============================================================
+
 def excel_bytes(sheets):
+
     buffer = io.BytesIO()
+
 
     with pd.ExcelWriter(
         buffer,
         engine="openpyxl",
     ) as writer:
 
+
         for (
             sheet_name,
             dataframe
         ) in sheets.items():
 
-            dataframe.to_excel(
+
+            # =================================================
+            # Clean Sheet Name
+            # =================================================
+
+            safe_sheet_name = (
+                clean_excel_value(
+                    str(
+                        sheet_name
+                    )
+                )
+            )
+
+
+            # Excel sheet names cannot contain:
+            # : \ / ? * [ ]
+            safe_sheet_name = re.sub(
+                r'[:\\/?*\[\]]',
+                "_",
+                safe_sheet_name,
+            )
+
+
+            safe_sheet_name = (
+                safe_sheet_name[:31]
+            )
+
+
+            if not safe_sheet_name:
+
+                safe_sheet_name = "Sheet"
+
+
+            # =================================================
+            # Clean DataFrame
+            # =================================================
+
+            safe_dataframe = (
+                clean_dataframe_for_excel(
+                    dataframe
+                )
+            )
+
+
+            # =================================================
+            # Write Excel
+            # =================================================
+
+            safe_dataframe.to_excel(
                 writer,
-                sheet_name=sheet_name[:31],
+                sheet_name=safe_sheet_name,
                 index=False,
             )
 
+
     buffer.seek(0)
+
 
     return buffer.getvalue()
 
