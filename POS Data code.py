@@ -11866,9 +11866,7 @@ source_count = len(
 # ============================================================
 # Dashboard Metrics
 # ============================================================
-# ============================================================
-# Dashboard Metrics
-# ============================================================
+
 source_count = len(
     raw_all
 )
@@ -11876,6 +11874,11 @@ source_count = len(
 output_count = len(
     final_report
 )
+
+
+# ============================================================
+# Mapping Quality
+# ============================================================
 
 customer_unmapped = int(
     detail[
@@ -11885,6 +11888,7 @@ customer_unmapped = int(
     .sum()
 )
 
+
 sku_unmapped = int(
     detail[
         "SKU_MAPPING_STATUS"
@@ -11892,6 +11896,7 @@ sku_unmapped = int(
     .eq("UNMAPPED")
     .sum()
 )
+
 
 both_unmapped = int(
     (
@@ -11907,6 +11912,31 @@ both_unmapped = int(
 )
 
 
+# ============================================================
+# Responsible Sales / Customer Ownership
+#
+# 新邏輯：
+# 不再檢查 FILE_SALES_ID 是否 MATCH
+# 改成確認是否能透過 Customer Mapping
+# 判定真正負責業務
+# ============================================================
+
+customer_owner_unmapped = int(
+    detail[
+        "CUSTOMER_OWNER_STATUS"
+    ]
+    .eq("UNMAPPED")
+    .sum()
+)
+
+
+# ============================================================
+# Audit Metrics
+#
+# Contract mismatch 只做 Audit
+# 不影響 Submission matching
+# ============================================================
+
 contract_mismatch = int(
     detail[
         "CONTRACT_CHECK"
@@ -11914,6 +11944,11 @@ contract_mismatch = int(
     .eq("MISMATCH")
     .sum()
 )
+
+
+# ============================================================
+# File Processing Status
+# ============================================================
 
 failed_files = int(
     upload_log[
@@ -11923,6 +11958,7 @@ failed_files = int(
     .sum()
 )
 
+
 successful_files = int(
     upload_log[
         "狀態"
@@ -11930,7 +11966,6 @@ successful_files = int(
     .eq("SUCCESS")
     .sum()
 )
-
 
 
 # ============================================================
@@ -12090,24 +12125,35 @@ else:
 
 
 # ============================================================
+## ============================================================
 # Additional Quality Metrics
 # ============================================================
+
 q1, q2, q3 = st.columns(3)
 
-q1.metric(
-    "Customer + SKU 同時 Unmapped",
-    f"{both_unmapped:,}",
-)
 
-q2.metric(
-    "業務代號不一致",
-    f"{sales_mismatch:,}",
-)
+with q1:
 
-q3.metric(
-    "合約編號不一致",
-    f"{contract_mismatch:,}",
-)
+    st.metric(
+        "Customer + SKU 同時 Unmapped",
+        f"{both_unmapped:,}",
+    )
+
+
+with q2:
+
+    st.metric(
+        "無法判定負責業務",
+        f"{customer_owner_unmapped:,}",
+    )
+
+
+with q3:
+
+    st.metric(
+        "合約編號不一致（Audit）",
+        f"{contract_mismatch:,}",
+    )
 
 
 # ============================================================
