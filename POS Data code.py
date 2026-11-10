@@ -1,6 +1,6 @@
 import io
 import re
-import unicodedata
+import unicodedataF
 from pathlib import Path
 
 import pandas as pd
@@ -10359,16 +10359,16 @@ from pathlib import Path
 
 section_header(
     "1",
-    "上傳當月份資料",
     "Upload monthly POS templates",
+    "上傳當月份資料",
 )
 
 
 upload_mode = st.radio(
-    "請選擇上傳方式",
+    "Upload Method",
     [
-        "📦 ZIP 批次上傳",
-        "📄 Excel / CSV 多檔上傳",
+        "📦 ZIP File (批次上傳)",
+        "📄 Excel / CSV (多檔上傳)",
     ],
     horizontal=True,
 )
@@ -10381,10 +10381,10 @@ template_files = []
 # MODE A - ZIP Upload
 # ============================================================
 
-if upload_mode == "📦 ZIP 批次上傳":
+if upload_mode == "📦 ZIP File (批次上傳)":
 
     zip_file = st.file_uploader(
-        "上傳當月份 POS ZIP",
+        "上傳當月份 Upload POS ZIP File",
         type=["zip"],
         key="pos_zip",
         on_change="ignore",
