@@ -12939,7 +12939,7 @@ with s1:
 with s2:
 
     st.metric(
-        "✔️ 成功繳交",
+        "✔️ Submission Successful (成功繳交)",
         f"{success_count:,}",
     )
 
@@ -12947,7 +12947,7 @@ with s2:
 with s3:
 
     st.metric(
-        "❌ 上傳失敗",
+        "❌ Submission Failed (上傳失敗)",
         f"{submission_failed_count:,}",
     )
 
@@ -12955,7 +12955,7 @@ with s3:
 with s4:
 
     st.metric(
-        "⏳ 尚未繳交",
+        "⏳ Missing Submission (尚未繳交)",
         f"{missing_count:,}",
     )
 
@@ -12963,7 +12963,7 @@ with s4:
 with s5:
 
     st.metric(
-        "⚠️ 無法識別",
+        "⚠️ Error (無法識別)",
         f"{unmatched_upload_count:,}",
     )
 
