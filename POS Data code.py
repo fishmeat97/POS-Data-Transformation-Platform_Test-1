@@ -6236,16 +6236,16 @@ def transform_template_14(uploaded_file):
     # ========================================================
     
       valid = (
-        raw_sku.ne("")
-        &
-        ~raw_sku
-        .str.strip()
-        .str.upper()
-        .str.match(
-            r"^D[\d\-_/\.]+$",
-            na=False,
+            raw_sku.ne("")
+            &
+            ~raw_sku
+            .str.strip()
+            .str.upper()
+            .str.match(
+                r"^D[\d\-_/\.]+$",
+                na=False,
+            )
         )
-    )
 
 
     # ========================================================
