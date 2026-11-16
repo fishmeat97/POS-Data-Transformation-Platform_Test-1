@@ -405,6 +405,37 @@ def parse_filename(filename):
 # ============================================================
 # File Readers
 # ============================================================
+
+def read_txt_flexible(uploaded_file):
+
+    uploaded_file.seek(0)
+
+    raw = uploaded_file.read()
+
+    if isinstance(raw, str):
+        return raw
+
+    last_error = None
+
+    for encoding in [
+        "utf-8-sig",
+        "utf-8",
+        "cp950",
+        "big5",
+        "latin1",
+    ]:
+
+        try:
+            return raw.decode(encoding)
+
+        except Exception as e:
+            last_error = e
+
+    raise ValueError(
+        f"TXT 無法讀取：{last_error}"
+    )
+
+    
 def read_csv_flexible(uploaded_file, header=0):
     raw = uploaded_file.getvalue()
     last_error = None
@@ -7386,6 +7417,60 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
+    # TEMPLATE 17
+    # 駱北 TXT
+    # ========================================================
+    
+    if suffix == ".txt":
+    
+        if (
+            "駱北"
+            in filename_text
+        ):
+    
+            return "TEMPLATE_17"
+    
+    
+        try:
+    
+            uploaded_file.seek(0)
+    
+            txt = read_txt_flexible(
+                uploaded_file
+            )
+    
+            first_text = "\n".join(
+                txt.splitlines()[:30]
+            )
+    
+    
+            if (
+                "銷退貨明細表"
+                in first_text
+                and
+                "貨品名稱"
+                in first_text
+                and
+                "數量"
+                in first_text
+                and
+                "單位"
+                in first_text
+            ):
+    
+                return "TEMPLATE_17"
+    
+    
+        except Exception:
+    
+            pass
+    
+    
+        return "UNKNOWN"
+
+
+    
+    # ========================================================
     # CSV FILES
     # ========================================================
 
@@ -7449,6 +7534,9 @@ def detect_template_type(uploaded_file):
             pass
 
 
+
+
+        
         # ====================================================
         # CSV Template 7
         #
@@ -8387,6 +8475,385 @@ def detect_template_type(uploaded_file):
         pass
 
 
+
+# ============================================================
+# TEMPLATE 17
+# 駱北 TXT Fixed-Width Sales Detail
+#
+# Source:
+# .txt fixed-width report
+#
+# Expected structure:
+#
+# 貨單日期 | 貨單編號 | 貨品名稱 | 數量 | 單位 | 售價 | 小計 | ...
+#
+# Important:
+# - Date / document number may be blank on continuation rows
+# - Product name + QTY + Unit are the core fields
+# - No Item Code is required
+# - SKU Mapping uses RAW_SKU only
+# ============================================================
+
+def transform_template_17(uploaded_file):
+
+    meta = parse_filename(
+        uploaded_file.name
+    )
+
+
+    # ========================================================
+    # 1. Read TXT
+    # ========================================================
+
+    text = read_txt_flexible(
+        uploaded_file
+    )
+
+    lines = text.splitlines()
+
+
+    # ========================================================
+    # 2. Row Pattern
+    #
+    # Examples:
+    #
+    # 115/10/01 銷貨1151001002 百富14 6.00 瓶 ...
+    #
+    # continuation:
+    #
+    #           慕赫12年 6.00 瓶 ...
+    #
+    # ========================================================
+
+    row_pattern = re.compile(
+        r"""
+        ^\s*
+
+        (?:
+            (?P<date>
+                \d{3}/\d{1,2}/\d{1,2}
+            )
+            \s+
+        )?
+
+        (?:
+            (?P<document>
+                (?:銷貨|退貨)\S+
+            )
+            \s+
+        )?
+
+        (?P<sku>
+            .+?
+        )
+
+        \s{2,}
+
+        (?P<qty>
+            [-+]?
+            \d[\d,]*
+            (?:\.\d+)?
+        )
+
+        \s+
+
+        (?P<unit>
+            瓶|
+            罐|
+            支|
+            箱|
+            盒|
+            組|
+            套|
+            條|
+            個|
+            筆|
+            入|
+            桶
+        )
+
+        (?:\s+|$)
+        """,
+        re.VERBOSE,
+    )
+
+
+    # ========================================================
+    # 3. Parse Rows
+    # ========================================================
+
+    records = []
+
+    current_date = ""
+    current_document = ""
+
+
+    for line_number, line in enumerate(
+        lines,
+        start=1,
+    ):
+
+        match = row_pattern.search(
+            line
+        )
+
+        if match is None:
+            continue
+
+
+        parsed_date = norm_text(
+            match.group("date")
+        )
+
+        parsed_document = norm_text(
+            match.group("document")
+        )
+
+        raw_sku = norm_text(
+            match.group("sku")
+        )
+
+        raw_qty = (
+            match.group("qty")
+        )
+
+        raw_unit = norm_text(
+            match.group("unit")
+        )
+
+
+        # ----------------------------------------------------
+        # Forward-fill document metadata
+        # ----------------------------------------------------
+
+        if parsed_date:
+            current_date = parsed_date
+
+        if parsed_document:
+            current_document = parsed_document
+
+
+        # ----------------------------------------------------
+        # Basic SKU validation
+        # ----------------------------------------------------
+
+        if not raw_sku:
+            continue
+
+
+        invalid_sku_keys = {
+            norm_key("貨品名稱"),
+            norm_key("數量"),
+            norm_key("合計"),
+            norm_key("總計"),
+            norm_key("小計"),
+        }
+
+
+        if norm_key(raw_sku) in invalid_sku_keys:
+            continue
+
+
+        # ----------------------------------------------------
+        # Quantity
+        # ----------------------------------------------------
+
+        qty = pd.to_numeric(
+            str(raw_qty).replace(
+                ",",
+                "",
+            ),
+            errors="coerce",
+        )
+
+
+        if pd.isna(qty):
+            continue
+
+
+        records.append(
+            {
+                "SOURCE_ROW":
+                    line_number,
+
+                "RAW_TRANSACTION_DATE":
+                    current_date,
+
+                "RAW_DOCUMENT_NO":
+                    current_document,
+
+                "RAW_SKU":
+                    raw_sku,
+
+                "QTY":
+                    qty,
+
+                "RAW_UNIT":
+                    raw_unit,
+            }
+        )
+
+
+    # ========================================================
+    # 4. Validation
+    # ========================================================
+
+    if not records:
+
+        raise ValueError(
+            "Template 17 找不到有效商品資料。"
+        )
+
+
+    data = pd.DataFrame(
+        records
+    )
+
+
+    # ========================================================
+    # 5. Optional Unit Filter
+    #
+    # IMPORTANT:
+    #
+    # 若沿用你原本駱北 / 全億規則：
+    # 只保留 瓶 / 盒 / 組
+    #
+    # 如果你之後決定連 箱 都要，
+    # 把 箱 加進 allowed_units 即可。
+    # ========================================================
+
+    allowed_units = {
+        "瓶",
+        "盒",
+        "組",
+    }
+
+
+    data = (
+        data[
+            data[
+                "RAW_UNIT"
+            ].isin(
+                allowed_units
+            )
+        ]
+        .copy()
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    if data.empty:
+
+        raise ValueError(
+            "Template 17 經單位篩選後沒有有效商品資料。"
+        )
+
+
+    # ========================================================
+    # 6. Standard Output
+    # ========================================================
+
+    output = base_records(
+        data,
+        meta,
+        "T17_LOBEI_TXT",
+        uploaded_file.name,
+    )
+
+
+    output[
+        "SOURCE_ROW"
+    ] = data[
+        "SOURCE_ROW"
+    ].values
+
+
+    output[
+        "RAW_CUSTOMER"
+    ] = meta[
+        "FILE_RAWDATA_NAME"
+    ]
+
+
+    output[
+        "RAW_ROW_CUSTOMER"
+    ] = ""
+
+
+    output[
+        "RAW_SKU"
+    ] = data[
+        "RAW_SKU"
+    ].values
+
+
+    output[
+        "QTY"
+    ] = data[
+        "QTY"
+    ].values
+
+
+    output[
+        "RAW_UNIT"
+    ] = data[
+        "RAW_UNIT"
+    ].values
+
+
+    output[
+        "RAW_TRANSACTION_DATE"
+    ] = data[
+        "RAW_TRANSACTION_DATE"
+    ].values
+
+
+    output[
+        "RAW_DOCUMENT_NO"
+    ] = data[
+        "RAW_DOCUMENT_NO"
+    ].values
+
+
+    # ========================================================
+    # 7. Price
+    #
+    # Final Report still uses SKU Mapping RSP
+    # ========================================================
+
+    output[
+        "UNIT_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "TOTAL_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "SOURCE_QTY_COLUMN"
+    ] = (
+        "TXT fixed-width quantity"
+    )
+
+
+    output[
+        "SOURCE_PRICE_COLUMN"
+    ] = (
+        "RSP_FROM_SKU_MAPPING"
+    )
+
+
+    return output
+
+
+
+
+
+    
     # ========================================================
     # TEMPLATE 7
     # Generic SKU + QTY
@@ -8791,6 +9258,18 @@ def auto_transform_template(
         )
 
 
+    elif template_type == "TEMPLATE_17":
+
+    uploaded_file.seek(0)
+
+    result = transform_template_17(
+        uploaded_file
+    )
+
+    return (
+        result,
+        "Template 17｜駱北 TXT 銷退貨明細",
+    )
     
     # ========================================================
     # UNKNOWN
