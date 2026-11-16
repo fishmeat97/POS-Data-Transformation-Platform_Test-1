@@ -9260,16 +9260,16 @@ def auto_transform_template(
 
     elif template_type == "TEMPLATE_17":
 
-    uploaded_file.seek(0)
-
-    result = transform_template_17(
-        uploaded_file
-    )
-
-    return (
-        result,
-        "Template 17｜駱北 TXT 銷退貨明細",
-    )
+        uploaded_file.seek(0)
+    
+        result = transform_template_17(
+            uploaded_file
+        )
+    
+        return (
+            result,
+            "Template 17｜駱北 TXT 銷退貨明細",
+        )
     
     # ========================================================
     # UNKNOWN
