@@ -6234,15 +6234,16 @@ def transform_template_14(uploaded_file):
     # D002-12-070-003
     # Dxxxx...
     # ========================================================
-
-    valid = (
+    
+      valid = (
         raw_sku.ne("")
         &
         ~raw_sku
         .str.strip()
         .str.upper()
-        .str.startswith(
-            "D"
+        .str.match(
+            r"^D[\d\-_/\.]+$",
+            na=False,
         )
     )
 
