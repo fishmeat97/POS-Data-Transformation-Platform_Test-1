@@ -6218,35 +6218,72 @@ def transform_template_14(uploaded_file):
     )
 
 
-    # ========================================================
+  # ========================================================
     # 7. Filter Valid SKU
     #
     # Keep:
     # - not blank
+    # - normal product names beginning with D
     #
     # Remove:
     # - blank
-    # - starts with D
+    # - D-prefixed internal-code patterns
     #
     # Examples removed:
     #
     # D001-00-070-001
     # D002-12-070-003
-    # Dxxxx...
+    # D123-456
+    #
+    # Examples kept:
+    #
+    # DAMORE
+    # DALMORE 12
+    # DEWAR'S
     # ========================================================
     
-      valid = (
-            raw_sku.ne("")
-            &
-            ~raw_sku
-            .str.strip()
-            .str.upper()
-            .str.match(
-                r"^D[\d\-_/\.]+$",
-                na=False,
-            )
+    sku_clean = (
+        raw_sku
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+    
+    
+    # --------------------------------------------------------
+    # Internal-code-like D pattern
+    #
+    # Must:
+    # 1. start with D
+    # 2. immediately followed by digit
+    # 3. contain only digits / separators afterwards
+    #
+    # Examples:
+    # D001-00-070-001 -> True
+    # D12345          -> True
+    # D001/002        -> True
+    #
+    # DALMORE 12      -> False
+    # DAMORE          -> False
+    # DEWAR'S         -> False
+    # --------------------------------------------------------
+    
+    is_internal_d_code = (
+        sku_clean
+        .str.upper()
+        .str.match(
+            r"^D\d[\d\-_/\.]*$",
+            na=False,
         )
-
+    )
+    
+    
+    valid = (
+        sku_clean.ne("")
+        &
+        ~is_internal_d_code
+    )
+    
 
     # ========================================================
     # 8. Apply Filter
