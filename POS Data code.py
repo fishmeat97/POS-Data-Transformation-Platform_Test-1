@@ -7810,8 +7810,8 @@ def detect_template_type(uploaded_file):
                 ):
                     return "TEMPLATE_6"
         
-        except Exception:
-        pass
+    except Exception:
+    pass
 
     # ========================================================
     # TEMPLATE 8
