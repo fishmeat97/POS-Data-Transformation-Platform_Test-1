@@ -7621,197 +7621,197 @@ def detect_template_type(uploaded_file):
 
 
   # ========================================================
-# TEMPLATE 5
-# PRT Standard POS Template
-#
-# Examples:
-# - 康尼克
-# - 杜康系列
-#
-# Header may appear anywhere within first 15 rows.
-#
-# Required:
-# - SKU
-# - QTY
-#
-# Strong signals:
-# - Brand
-# - Size
-# - Category
-# ========================================================
-
-try:
-
-    has_template_5_header = False
-
-
-    for i in range(
-        min(
-            15,
-            len(raw),
-        )
-    ):
-
-        values = [
-            norm_text(value)
-            for value
-            in raw.iloc[i].tolist()
-        ]
-
-
-        # ------------------------------------------------
-        # Normalized headers
-        # ------------------------------------------------
-
-        value_keys = {
-            norm_key(value)
-            for value
-            in values
-            if norm_text(value)
-        }
-
-
-        # ------------------------------------------------
-        # SKU
-        # ------------------------------------------------
-
-        sku_aliases = [
-            "品項名稱 SKU Name",
-            "SKU Name",
-            "SKU NAME",
-            "品項名稱",
-            "商品名稱",
-            "品名",
-        ]
-
-
-        has_sku = any(
-            norm_key(alias)
-            in value_keys
-            for alias
-            in sku_aliases
-        )
-
-
-        # ------------------------------------------------
-        # QTY
-        # ------------------------------------------------
-
-        qty_aliases = [
-            "銷量 Quantity",
-            "Quantity",
-            "QTY",
-            "銷量",
-            "數量",
-            "瓶數",
-        ]
-
-
-        has_qty = any(
-            norm_key(alias)
-            in value_keys
-            for alias
-            in qty_aliases
-        )
-
-
-        # ------------------------------------------------
-        # Brand
-        # ------------------------------------------------
-
-        brand_aliases = [
-            "品牌名稱 Brand Name",
-            "Brand Name",
-            "Brand",
-            "品牌名稱",
-            "品牌",
-        ]
-
-
-        has_brand = any(
-            norm_key(alias)
-            in value_keys
-            for alias
-            in brand_aliases
-        )
-
-
-        # ------------------------------------------------
-        # Size
-        # ------------------------------------------------
-
-        size_aliases = [
-            "規格 Size (ml)",
-            "Size (ml)",
-            "Size",
-            "規格",
-            "容量",
-        ]
-
-
-        has_size = any(
-            norm_key(alias)
-            in value_keys
-            for alias
-            in size_aliases
-        )
-
-
-        # ------------------------------------------------
-        # Category
-        # ------------------------------------------------
-
-        category_aliases = [
-            "品類 Category",
-            "Category",
-            "品類",
-        ]
-
-
-        has_category = any(
-            norm_key(alias)
-            in value_keys
-            for alias
-            in category_aliases
-        )
-
-
-        # ------------------------------------------------
-        # Template 5 Decision
-        #
-        # SKU + QTY are mandatory.
-        #
-        # At least one additional PRT signal:
-        # Brand / Size / Category
-        # ------------------------------------------------
-
-        if (
-            has_sku
-            and
-            has_qty
-            and
-            (
-                has_brand
-                or
-                has_size
-                or
-                has_category
+    # TEMPLATE 5
+    # PRT Standard POS Template
+    #
+    # Examples:
+    # - 康尼克
+    # - 杜康系列
+    #
+    # Header may appear anywhere within first 15 rows.
+    #
+    # Required:
+    # - SKU
+    # - QTY
+    #
+    # Strong signals:
+    # - Brand
+    # - Size
+    # - Category
+    # ========================================================
+    
+    try:
+    
+        has_template_5_header = False
+    
+    
+        for i in range(
+            min(
+                15,
+                len(raw),
             )
         ):
-
-            has_template_5_header = True
-
-            break
-
-
-    if has_template_5_header:
-
-        return "TEMPLATE_5"
-
-
-except Exception:
-
-    pass
+    
+            values = [
+                norm_text(value)
+                for value
+                in raw.iloc[i].tolist()
+            ]
+    
+    
+            # ------------------------------------------------
+            # Normalized headers
+            # ------------------------------------------------
+    
+            value_keys = {
+                norm_key(value)
+                for value
+                in values
+                if norm_text(value)
+            }
+    
+    
+            # ------------------------------------------------
+            # SKU
+            # ------------------------------------------------
+    
+            sku_aliases = [
+                "品項名稱 SKU Name",
+                "SKU Name",
+                "SKU NAME",
+                "品項名稱",
+                "商品名稱",
+                "品名",
+            ]
+    
+    
+            has_sku = any(
+                norm_key(alias)
+                in value_keys
+                for alias
+                in sku_aliases
+            )
+    
+    
+            # ------------------------------------------------
+            # QTY
+            # ------------------------------------------------
+    
+            qty_aliases = [
+                "銷量 Quantity",
+                "Quantity",
+                "QTY",
+                "銷量",
+                "數量",
+                "瓶數",
+            ]
+    
+    
+            has_qty = any(
+                norm_key(alias)
+                in value_keys
+                for alias
+                in qty_aliases
+            )
+    
+    
+            # ------------------------------------------------
+            # Brand
+            # ------------------------------------------------
+    
+            brand_aliases = [
+                "品牌名稱 Brand Name",
+                "Brand Name",
+                "Brand",
+                "品牌名稱",
+                "品牌",
+            ]
+    
+    
+            has_brand = any(
+                norm_key(alias)
+                in value_keys
+                for alias
+                in brand_aliases
+            )
+    
+    
+            # ------------------------------------------------
+            # Size
+            # ------------------------------------------------
+    
+            size_aliases = [
+                "規格 Size (ml)",
+                "Size (ml)",
+                "Size",
+                "規格",
+                "容量",
+            ]
+    
+    
+            has_size = any(
+                norm_key(alias)
+                in value_keys
+                for alias
+                in size_aliases
+            )
+    
+    
+            # ------------------------------------------------
+            # Category
+            # ------------------------------------------------
+    
+            category_aliases = [
+                "品類 Category",
+                "Category",
+                "品類",
+            ]
+    
+    
+            has_category = any(
+                norm_key(alias)
+                in value_keys
+                for alias
+                in category_aliases
+            )
+    
+    
+            # ------------------------------------------------
+            # Template 5 Decision
+            #
+            # SKU + QTY are mandatory.
+            #
+            # At least one additional PRT signal:
+            # Brand / Size / Category
+            # ------------------------------------------------
+    
+            if (
+                has_sku
+                and
+                has_qty
+                and
+                (
+                    has_brand
+                    or
+                    has_size
+                    or
+                    has_category
+                )
+            ):
+    
+                has_template_5_header = True
+    
+                break
+    
+    
+        if has_template_5_header:
+    
+            return "TEMPLATE_5"
+    
+    
+    except Exception:
+    
+        pass
 
 
     # ========================================================
