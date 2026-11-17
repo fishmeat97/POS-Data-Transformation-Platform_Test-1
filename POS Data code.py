@@ -2424,9 +2424,14 @@ def transform_template_5(uploaded_file):
 # ============================================================
 # TEMPLATE 6
 # No-header Transaction Detail
-# Example: 松賀
+# ============================================================
+# TEMPLATE 6
+# 松賀
 #
-# Fixed column positions:
+# Supports TWO no-header structures
+#
+# ------------------------------------------------------------
+# Legacy Format
 #
 # 0 日期
 # 1 客戶號碼
@@ -2437,19 +2442,23 @@ def transform_template_5(uploaded_file):
 # 6 數量
 # 7 小計
 #
-# Customer:
-# Raw row customer is available
-# Final customer mapping still uses filename metadata first
+# ------------------------------------------------------------
+# New Format
 #
-# Price:
-# Source price retained for audit only
-# Final report still uses SKU Mapping RSP
+# 0 Item / Barcode-like code
+# 1 SKU Name
+# 2 Source Unit Price
+# 3 QTY
+#
+# IMPORTANT:
+# Item Code is NOT used for SKU Mapping.
+# Final price still comes from SKU Mapping RSP.
 # ============================================================
 
 def transform_template_6(uploaded_file):
 
     # ========================================================
-    # 1. Parse Filename
+    # 1. Filename Metadata
     # ========================================================
 
     meta = parse_filename(
@@ -2458,355 +2467,536 @@ def transform_template_6(uploaded_file):
 
 
     # ========================================================
-    # 2. Read XLS without header
+    # 2. Read XLS / XLSX
     # ========================================================
 
     uploaded_file.seek(0)
 
-    df = pd.read_excel(
-        uploaded_file,
-        sheet_name=0,
-        header=None,
-        engine="xlrd",
-    )
+    suffix = Path(
+        uploaded_file.name
+    ).suffix.lower()
+
+
+    if suffix == ".xls":
+
+        df = pd.read_excel(
+            uploaded_file,
+            sheet_name=0,
+            header=None,
+            engine="xlrd",
+        )
+
+    else:
+
+        df = pd.read_excel(
+            uploaded_file,
+            sheet_name=0,
+            header=None,
+        )
 
 
     df = (
         df
-        .dropna(how="all")
-        .reset_index(drop=True)
+        .dropna(
+            how="all"
+        )
+        .reset_index(
+            drop=True
+        )
     )
 
 
     if df.empty:
 
         raise ValueError(
-            "Template 6 檔案沒有資料。"
+            "Template 6｜松賀檔案沒有資料。"
         )
 
 
     # ========================================================
-    # 3. Validate Column Count
+    # 3. Detect 松賀 Structure
     # ========================================================
 
-    if df.shape[1] < 8:
+    column_count = df.shape[1]
+
+
+    # --------------------------------------------------------
+    # Legacy format
+    # --------------------------------------------------------
+
+    if column_count >= 8:
+
+        structure_type = (
+            "LEGACY_8_COLUMN"
+        )
+
+
+    # --------------------------------------------------------
+    # New format
+    # --------------------------------------------------------
+
+    elif column_count == 4:
+
+        structure_type = (
+            "NEW_4_COLUMN"
+        )
+
+
+    else:
 
         raise ValueError(
-            "Template 6 欄位數不足。"
-            f" Expected >= 8, Actual={df.shape[1]}"
+            "Template 6｜松賀欄位結構無法辨識。 "
+            f"Detected Columns={column_count}"
         )
 
 
     # ========================================================
-    # 4. Fixed Column Positions
+    # 4A. Legacy 松賀
     # ========================================================
 
-    DATE_COL = 0
-    CUSTOMER_NO_COL = 1
-    CUSTOMER_NAME_COL = 2
-    SKU_COL = 4
-    UNIT_PRICE_COL = 5
-    QTY_COL = 6
-    TOTAL_PRICE_COL = 7
+    if structure_type == "LEGACY_8_COLUMN":
+
+        DATE_COL = 0
+        CUSTOMER_NO_COL = 1
+        CUSTOMER_NAME_COL = 2
+
+        SKU_COL = 4
+
+        UNIT_PRICE_COL = 5
+        QTY_COL = 6
+        TOTAL_PRICE_COL = 7
 
 
-    # ========================================================
-    # 5. Raw Fields
-    # ========================================================
-
-    raw_sku = (
-        df.iloc[
-            :,
-            SKU_COL
-        ]
-        .map(
-            norm_text
+        raw_sku = (
+            df.iloc[
+                :,
+                SKU_COL
+            ]
+            .map(
+                norm_text
+            )
         )
-    )
 
 
-    qty = numeric(
-        df.iloc[
-            :,
-            QTY_COL
-        ]
-    )
-
-
-    # ========================================================
-    # 6. Keep Valid Product Rows
-    #
-    # 商品名稱不能是空白
-    # 數量允許後面再檢查
-    # ========================================================
-
-    valid = (
-        raw_sku
-        .ne("")
-    )
-
-
-    df = (
-        df.loc[
-            valid
-        ]
-        .reset_index(
-            drop=True
+        qty = numeric(
+            df.iloc[
+                :,
+                QTY_COL
+            ]
         )
-    )
 
 
-    raw_sku = (
-        raw_sku.loc[
-            valid
-        ]
-        .reset_index(
-            drop=True
+        valid = (
+            raw_sku.ne("")
         )
-    )
 
 
-    qty = (
-        qty.loc[
-            valid
-        ]
-        .reset_index(
-            drop=True
+        filtered = (
+            df.loc[
+                valid
+            ]
+            .copy()
+            .reset_index(
+                drop=False
+            )
         )
-    )
 
 
-    # ========================================================
-    # 7. Build Standard Output
-    # ========================================================
-
-    output = base_records(
-        df,
-        meta,
-        "T6_NO_HEADER_TRANSACTION",
-        uploaded_file.name,
-    )
-
-
-    # ========================================================
-    # 8. Source Row
-    # ========================================================
-
-    output[
-        "SOURCE_ROW"
-    ] = range(
-        1,
-        len(df) + 1,
-    )
-
-
-    output[
-        "SOURCE_SHEET"
-    ] = "Sheet1"
-
-
-    # ========================================================
-    # 9. Customer
-    # ========================================================
-
-    output[
-        "RAW_CUSTOMER"
-    ] = meta[
-        "FILE_RAWDATA_NAME"
-    ]
-
-
-    output[
-        "RAW_ROW_CUSTOMER"
-    ] = (
-        df.iloc[
-            :,
-            CUSTOMER_NAME_COL
-        ]
-        .map(
-            norm_text
+        raw_sku = (
+            raw_sku.loc[
+                valid
+            ]
+            .reset_index(
+                drop=True
+            )
         )
-    )
 
 
-    output[
-        "RAW_CUSTOMER_NO"
-    ] = (
-        df.iloc[
-            :,
-            CUSTOMER_NO_COL
-        ]
-        .map(
-            norm_text
+        qty = (
+            qty.loc[
+                valid
+            ]
+            .reset_index(
+                drop=True
+            )
         )
-    )
 
 
-    output[
-        "RAW_SKU"
-    ] = raw_sku
-
-
-    # ========================================================
-    # 11. Quantity
-    # ========================================================
-
-    output[
-        "QTY"
-    ] = qty
-
-
-    # ========================================================
-    # 12. Transaction Date
-    # ========================================================
-
-    output[
-        "RAW_TRANSACTION_DATE"
-    ] = (
-        df.iloc[
-            :,
-            DATE_COL
-        ]
-    )
-
-
-    # ========================================================
-    # 13. Source Price
-    #
-    # Audit only
-    # ========================================================
-
-    output[
-        "RAW_UNIT_PRICE"
-    ] = numeric(
-        df.iloc[
-            :,
-            UNIT_PRICE_COL
-        ]
-    )
-
-
-    output[
-        "RAW_TOTAL_PRICE"
-    ] = numeric(
-        df.iloc[
-            :,
-            TOTAL_PRICE_COL
-        ]
-    )
-
-
-    # ========================================================
-    # 14. Final Price
-    #
-    # Final Report still uses SKU Mapping RSP
-    # ========================================================
-
-    output[
-        "UNIT_PRICE"
-    ] = pd.NA
-
-
-    output[
-        "TOTAL_PRICE"
-    ] = pd.NA
-
-
-    # ========================================================
-    # 15. Optional Raw Mapping Fields
-    # ========================================================
-
-    output[
-        "RAW_BRAND"
-    ] = ""
-
-
-    output[
-        "RAW_SIZE"
-    ] = ""
-
-
-    output[
-        "RAW_CATEGORY"
-    ] = ""
-
-
-    # ========================================================
-    # 16. Audit
-    # ========================================================
-
-    output[
-        "SOURCE_QTY_COLUMN"
-    ] = "Column 6｜數量"
-
-
-    output[
-        "SOURCE_PRICE_COLUMN"
-    ] = (
-        "RSP_FROM_SKU_MAPPING"
-    )
-
-
-    return output
-
-
-
-# ============================================================
-# Find Header Row by Standard Header Mapping
-# ============================================================
-
-def find_header_row(
-    raw,
-    required_fields,
-    max_rows=30,
-):
-
-    for i in range(
-        min(
-            max_rows,
-            len(raw),
+        output = base_records(
+            filtered,
+            meta,
+            "T6_SONGHE_LEGACY",
+            uploaded_file.name,
         )
-    ):
 
-        values = [
-            norm_text(value)
-            for value
-            in raw.iloc[i].tolist()
+
+        # Original Excel row
+        output[
+            "SOURCE_ROW"
+        ] = (
+            filtered[
+                "index"
+            ]
+            + 1
+        ).values
+
+
+        output[
+            "SOURCE_SHEET"
+        ] = "Sheet1"
+
+
+        output[
+            "RAW_CUSTOMER"
+        ] = meta[
+            "FILE_RAWDATA_NAME"
         ]
 
-        all_found = True
 
-        for field_name in required_fields:
+        output[
+            "RAW_ROW_CUSTOMER"
+        ] = (
+            filtered.iloc[
+                :,
+                CUSTOMER_NAME_COL + 1
+            ]
+            .map(
+                norm_text
+            )
+            .values
+        )
 
-            candidates = (
-                STANDARD_HEADER_MAPPING.get(
-                    field_name,
-                    [],
-                )
+
+        output[
+            "RAW_CUSTOMER_NO"
+        ] = (
+            filtered.iloc[
+                :,
+                CUSTOMER_NO_COL + 1
+            ]
+            .map(
+                norm_text
+            )
+            .values
+        )
+
+
+        output[
+            "RAW_SKU"
+        ] = raw_sku.values
+
+
+        output[
+            "QTY"
+        ] = qty.values
+
+
+        output[
+            "RAW_TRANSACTION_DATE"
+        ] = (
+            filtered.iloc[
+                :,
+                DATE_COL + 1
+            ]
+            .map(
+                norm_text
+            )
+            .values
+        )
+
+
+        # Source prices only for audit
+        output[
+            "RAW_UNIT_PRICE"
+        ] = numeric(
+            filtered.iloc[
+                :,
+                UNIT_PRICE_COL + 1
+            ]
+        ).values
+
+
+        output[
+            "RAW_TOTAL_PRICE"
+        ] = numeric(
+            filtered.iloc[
+                :,
+                TOTAL_PRICE_COL + 1
+            ]
+        ).values
+
+
+        # Final Report does NOT use source price
+        output[
+            "UNIT_PRICE"
+        ] = pd.NA
+
+
+        output[
+            "TOTAL_PRICE"
+        ] = pd.NA
+
+
+        output[
+            "SOURCE_QTY_COLUMN"
+        ] = "Legacy Column G"
+
+
+        output[
+            "SOURCE_PRICE_COLUMN"
+        ] = "RSP_FROM_SKU_MAPPING"
+
+
+        output[
+            "SOURCE_STRUCTURE"
+        ] = structure_type
+
+
+        return output
+
+
+    # ========================================================
+    # 4B. New 松賀
+    # ========================================================
+
+    elif structure_type == "NEW_4_COLUMN":
+
+        # ----------------------------------------------------
+        # New Structure
+        #
+        # A = Item ID / Barcode-like code
+        # B = SKU
+        # C = Source Unit Price
+        # D = QTY
+        #
+        # Item ID is intentionally ignored.
+        # ----------------------------------------------------
+
+        SKU_COL = 1
+        UNIT_PRICE_COL = 2
+        QTY_COL = 3
+
+
+        # ====================================================
+        # SKU
+        # ====================================================
+
+        raw_sku = (
+            df.iloc[
+                :,
+                SKU_COL
+            ]
+            .map(
+                norm_text
+            )
+        )
+
+
+        # ====================================================
+        # Quantity
+        # ====================================================
+
+        qty = numeric(
+            df.iloc[
+                :,
+                QTY_COL
+            ]
+        )
+
+
+        # ====================================================
+        # Source Unit Price
+        #
+        # IMPORTANT:
+        # Do NOT use quantity_numeric logic here if it blocks
+        # long numeric values.
+        # ====================================================
+
+        raw_unit_price = pd.to_numeric(
+            df.iloc[
+                :,
+                UNIT_PRICE_COL
+            ]
+            .astype(str)
+            .str.replace(
+                ",",
+                "",
+                regex=False,
+            )
+            .str.strip(),
+            errors="coerce",
+        )
+
+
+        # ====================================================
+        # Validation
+        #
+        # Do NOT require Item Code.
+        # SKU + QTY are enough.
+        # ====================================================
+
+        valid = (
+            raw_sku.ne("")
+            &
+            qty.notna()
+        )
+
+
+        filtered = (
+            df.loc[
+                valid
+            ]
+            .copy()
+            .reset_index(
+                drop=False
+            )
+        )
+
+
+        raw_sku = (
+            raw_sku.loc[
+                valid
+            ]
+            .reset_index(
+                drop=True
+            )
+        )
+
+
+        qty = (
+            qty.loc[
+                valid
+            ]
+            .reset_index(
+                drop=True
+            )
+        )
+
+
+        raw_unit_price = (
+            raw_unit_price.loc[
+                valid
+            ]
+            .reset_index(
+                drop=True
+            )
+        )
+
+
+        if filtered.empty:
+
+            raise ValueError(
+                "Template 6｜新版松賀找不到有效 SKU / QTY。"
             )
 
-            field_found = any(
-                any(
-                    norm_key(candidate)
-                    ==
-                    norm_key(value)
-                    for candidate
-                    in candidates
-                )
-                for value
-                in values
-                if norm_text(value)
-            )
 
-            if not field_found:
-                all_found = False
-                break
+        # ====================================================
+        # Standard Output
+        # ====================================================
 
-        if all_found:
-            return i
+        output = base_records(
+            filtered,
+            meta,
+            "T6_SONGHE_NEW",
+            uploaded_file.name,
+        )
 
-    return None
 
+        # Preserve actual original Excel row number
+        output[
+            "SOURCE_ROW"
+        ] = (
+            filtered[
+                "index"
+            ]
+            + 1
+        ).values
+
+
+        output[
+            "SOURCE_SHEET"
+        ] = "Sheet1"
+
+
+        # ====================================================
+        # Customer
+        #
+        # New file has no row-level customer.
+        # Therefore customer comes from filename metadata.
+        # ====================================================
+
+        output[
+            "RAW_CUSTOMER"
+        ] = meta[
+            "FILE_RAWDATA_NAME"
+        ]
+
+
+        output[
+            "RAW_ROW_CUSTOMER"
+        ] = ""
+
+
+        # ====================================================
+        # SKU
+        # ====================================================
+
+        output[
+            "RAW_SKU"
+        ] = raw_sku.values
+
+
+        # ====================================================
+        # QTY
+        # ====================================================
+
+        output[
+            "QTY"
+        ] = qty.values
+
+
+        # ====================================================
+        # Source Price Audit
+        #
+        # Source price is retained ONLY for audit.
+        # Final Report still uses Mapping RSP.
+        # ====================================================
+
+        output[
+            "RAW_UNIT_PRICE"
+        ] = raw_unit_price.values
+
+
+        output[
+            "UNIT_PRICE"
+        ] = pd.NA
+
+
+        output[
+            "TOTAL_PRICE"
+        ] = pd.NA
+
+
+        # ====================================================
+        # Audit
+        # ====================================================
+
+        output[
+            "SOURCE_QTY_COLUMN"
+        ] = "Column D"
+
+
+        output[
+            "SOURCE_PRICE_COLUMN"
+        ] = "RSP_FROM_SKU_MAPPING"
+
+
+        output[
+            "SOURCE_STRUCTURE"
+        ] = structure_type
+
+
+        return output
 
 # ============================================================
 # TEMPLATE 7
@@ -7562,22 +7752,66 @@ def detect_template_type(uploaded_file):
     # Fixed 8-column no-header structure
     # ========================================================
 
+    # ========================================================
+    # TEMPLATE 6
+    # 松賀
+    #
+    # Supports:
+    # - Legacy 8-column no-header structure
+    # - New 4-column no-header structure
+    # ========================================================
+    
     try:
-
-        if (
-            "松賀"
-            in filename_text
-            and
-            raw.shape[1] >= 8
-        ):
-
+    
+    if "松賀" in filename_text:
+    
+        # Legacy structure
+        if raw.shape[1] >= 8:
             return "TEMPLATE_6"
-
-
+    
+        # New structure
+        if raw.shape[1] == 4:
+    
+            # Column B should behave like SKU name
+            sku_sample = (
+                raw.iloc[:, 1]
+                .dropna()
+                .astype(str)
+                .map(norm_text)
+            )
+    
+            # Column C should mostly be numeric price
+            price_sample = pd.to_numeric(
+                raw.iloc[:, 2]
+                .astype(str)
+                .str.replace(",", "", regex=False),
+                errors="coerce",
+            )
+    
+            # Column D should mostly be numeric quantity
+            qty_sample = pd.to_numeric(
+                raw.iloc[:, 3],
+                errors="coerce",
+            )
+    
+            sku_ratio = (
+                sku_sample.ne("").mean()
+                if len(sku_sample)
+                else 0
+            )
+    
+            price_ratio = price_sample.notna().mean()
+            qty_ratio = qty_sample.notna().mean()
+    
+            if (
+                sku_ratio >= 0.80
+                and price_ratio >= 0.70
+                and qty_ratio >= 0.70
+            ):
+                return "TEMPLATE_6"
+    
     except Exception:
-
-        pass
-
+    pass
 
     # ========================================================
     # TEMPLATE 8
