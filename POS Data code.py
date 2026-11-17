@@ -501,7 +501,119 @@ def first_matching_column(df, keywords):
     return None
 
 
+def looks_like_template_5(raw):
 
+    for i in range(
+        min(
+            15,
+            len(raw),
+        )
+    ):
+
+        values = [
+            norm_text(value)
+            for value
+            in raw.iloc[i].tolist()
+        ]
+
+        value_keys = {
+            norm_key(value)
+            for value
+            in values
+            if norm_text(value)
+        }
+
+
+        sku_aliases = [
+            "品項名稱 SKU Name",
+            "SKU Name",
+            "SKU NAME",
+            "品項名稱",
+        ]
+
+
+        qty_aliases = [
+            "銷量 Quantity",
+            "Quantity",
+            "QTY",
+            "銷量",
+            "數量",
+        ]
+
+
+        brand_aliases = [
+            "品牌名稱 Brand Name",
+            "Brand Name",
+            "Brand",
+            "品牌名稱",
+            "品牌",
+        ]
+
+
+        size_aliases = [
+            "規格 Size (ml)",
+            "Size (ml)",
+            "Size",
+            "規格",
+            "容量",
+        ]
+
+
+        category_aliases = [
+            "品類 Category",
+            "Category",
+            "品類",
+        ]
+
+
+        has_sku = any(
+            norm_key(alias) in value_keys
+            for alias in sku_aliases
+        )
+
+
+        has_qty = any(
+            norm_key(alias) in value_keys
+            for alias in qty_aliases
+        )
+
+
+        has_brand = any(
+            norm_key(alias) in value_keys
+            for alias in brand_aliases
+        )
+
+
+        has_size = any(
+            norm_key(alias) in value_keys
+            for alias in size_aliases
+        )
+
+
+        has_category = any(
+            norm_key(alias) in value_keys
+            for alias in category_aliases
+        )
+
+
+        if (
+            has_sku
+            and
+            has_qty
+            and
+            (
+                has_brand
+                or
+                has_size
+                or
+                has_category
+            )
+        ):
+
+            return True
+
+
+    return False
 
 
 
@@ -2041,6 +2153,23 @@ def transform_template_5(uploaded_file):
 
     uploaded_file.seek(0)
 
+    suffix = Path(
+        uploaded_file.name
+    ).suffix.lower()
+    
+    
+    uploaded_file.seek(0)
+
+
+    if suffix == ".csv":
+
+        raw = read_csv_flexible(
+            uploaded_file,
+            header=None,
+        )
+
+else:
+
     raw = pd.read_excel(
         uploaded_file,
         sheet_name=0,
@@ -2129,11 +2258,21 @@ def transform_template_5(uploaded_file):
 
     uploaded_file.seek(0)
 
-    df = pd.read_excel(
-        uploaded_file,
-        sheet_name=0,
-        header=header_row,
-    )
+
+    if suffix == ".csv":
+    
+        df = read_csv_flexible(
+            uploaded_file,
+            header=header_row,
+        )
+    
+    else:
+    
+        df = pd.read_excel(
+            uploaded_file,
+            sheet_name=0,
+            header=header_row,
+        )
 
 
     # Clean headers
@@ -7375,6 +7514,33 @@ def detect_template_type(uploaded_file):
 
     if suffix == ".csv":
 
+        try:
+        
+                uploaded_file.seek(0)
+        
+                raw_csv = read_csv_flexible(
+                    uploaded_file,
+                    header=None,
+                )
+        
+        
+                # ====================================================
+                # TEMPLATE 5
+                # PRT Standard Template
+                # CSV version
+                # ====================================================
+        
+                if looks_like_template_5(
+                    raw_csv
+                ):
+        
+                    return "TEMPLATE_5"
+        
+
+
+
+
+        
         # ====================================================
         # CSV Template 1
         #
