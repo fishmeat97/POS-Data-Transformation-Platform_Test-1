@@ -7761,8 +7761,8 @@ def detect_template_type(uploaded_file):
     # - New 4-column no-header structure
     # ========================================================
     
-        try:
-        
+    try:
+    
         if "松賀" in filename_text:
         
             # Legacy structure
