@@ -7509,89 +7509,34 @@ def detect_template_type(uploaded_file):
 
     
     # ========================================================
-    # CSV FILES
-    # ========================================================
+   # ========================================================
+# CSV FILES
+# ========================================================
 
-    if suffix == ".csv":
+if suffix == ".csv":
 
-        try:
-        
-                uploaded_file.seek(0)
-        
-                raw_csv = read_csv_flexible(
-                    uploaded_file,
-                    header=None,
-                )
-        
-        
-                # ====================================================
-                # TEMPLATE 5
-                # PRT Standard Template
-                # CSV version
-                # ====================================================
-        
-                if looks_like_template_5(
-                    raw_csv
-                ):
-        
-                    return "TEMPLATE_5"
-        
+    # ====================================================
+    # CSV Template 5
+    #
+    # PRT Standard Template
+    # Header may appear within first 15 rows
+    # ====================================================
+
+    try:
+
+        uploaded_file.seek(0)
+
+        raw_csv = read_csv_flexible(
+            uploaded_file,
+            header=None,
+        )
 
 
+        if looks_like_template_5(
+            raw_csv
+        ):
 
-
-        
-        # ====================================================
-        # CSV Template 1
-        #
-        # Standard POS
-        # Header = first row
-        # ====================================================
-
-        try:
-
-            uploaded_file.seek(0)
-
-            df = read_csv_flexible(
-                uploaded_file,
-                header=0,
-            )
-
-
-            sku_col = first_matching_column(
-                df,
-                [
-                    "品項名稱 SKU Name",
-                    "SKU Name",
-                    "品項名稱",
-                    "品名",
-                    "商品名稱",
-                    "品名規格",
-                ],
-            )
-
-
-            qty_col = first_matching_column(
-                df,
-                [
-                    "銷量 Quantity",
-                    "Quantity",
-                    "銷量",
-                    "銷售量",
-                    "數量",
-                    "瓶數",
-                    "淨銷數量",
-                ],
-            )
-
-
-            if (
-                sku_col is not None
-                and
-                qty_col is not None
-            ):
-
-                return "TEMPLATE_1"
+            return "TEMPLATE_5"
 
 
     except Exception:
@@ -7599,53 +7544,111 @@ def detect_template_type(uploaded_file):
         pass
 
 
+    # ====================================================
+    # CSV Template 1
+    #
+    # Standard POS
+    # Header = first row
+    # ====================================================
+
+    try:
+
+        uploaded_file.seek(0)
+
+        df = read_csv_flexible(
+            uploaded_file,
+            header=0,
+        )
 
 
-        
-        # ====================================================
-        # CSV Template 7
-        #
-        # Generic SKU + QTY
-        # Header may appear within first 30 rows
-        # ====================================================
+        sku_col = first_matching_column(
+            df,
+            [
+                "品項名稱 SKU Name",
+                "SKU Name",
+                "品項名稱",
+                "品名",
+                "商品名稱",
+                "品名規格",
+            ],
+        )
 
-        try:
 
-            uploaded_file.seek(0)
+        qty_col = first_matching_column(
+            df,
+            [
+                "銷量 Quantity",
+                "Quantity",
+                "銷量",
+                "銷售量",
+                "數量",
+                "瓶數",
+                "淨銷數量",
+            ],
+        )
 
-            raw_csv = read_csv_flexible(
-                uploaded_file,
-                header=None,
+
+        if (
+            sku_col is not None
+            and
+            qty_col is not None
+        ):
+
+            return "TEMPLATE_1"
+
+
+    except Exception:
+
+        pass
+
+
+    # ====================================================
+    # CSV Template 7
+    #
+    # Generic SKU + QTY
+    # Header may appear within first 30 rows
+    # ====================================================
+
+    try:
+
+        uploaded_file.seek(0)
+
+        raw_csv = read_csv_flexible(
+            uploaded_file,
+            header=None,
+        )
+
+
+        template_7_header_row = (
+            find_header_row(
+                raw_csv,
+                required_fields=[
+                    "SKU",
+                    "QTY",
+                ],
+                max_rows=30,
             )
+        )
 
 
-            template_7_header_row = (
-                find_header_row(
-                    raw_csv,
-                    required_fields=[
-                        "SKU",
-                        "QTY",
-                    ],
-                    max_rows=30,
-                )
-            )
+        if (
+            template_7_header_row
+            is not None
+        ):
+
+            return "TEMPLATE_7"
 
 
-            if (
-                template_7_header_row
-                is not None
-            ):
+    except Exception:
 
-                return "TEMPLATE_7"
+        pass
 
 
-        except Exception:
+    # ====================================================
+    # CSV Unknown
+    # ====================================================
 
-            pass
-
-
-        return "UNKNOWN"
-
+    return "UNKNOWN"
 
     # ========================================================
     # ONLY EXCEL BELOW
