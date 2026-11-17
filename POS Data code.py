@@ -7507,6 +7507,23 @@ def detect_template_type(uploaded_file):
         return "UNKNOWN"
 
 
+
+    # ========================================================
+    # TEMPLATE 7
+    # 匯眾系列
+    #
+    # Filename rule:
+    # If filename contains "匯眾",
+    # directly classify as Template 7.
+    # ========================================================
+    
+    if "匯眾" in filename_text:
+    
+        return "TEMPLATE_7"
+
+
+
+
     
     # ========================================================
    # ========================================================
