@@ -7761,57 +7761,57 @@ def detect_template_type(uploaded_file):
     # - New 4-column no-header structure
     # ========================================================
     
-    try:
-    
-    if "松賀" in filename_text:
-    
-        # Legacy structure
-        if raw.shape[1] >= 8:
-            return "TEMPLATE_6"
-    
-        # New structure
-        if raw.shape[1] == 4:
-    
-            # Column B should behave like SKU name
-            sku_sample = (
-                raw.iloc[:, 1]
-                .dropna()
-                .astype(str)
-                .map(norm_text)
-            )
-    
-            # Column C should mostly be numeric price
-            price_sample = pd.to_numeric(
-                raw.iloc[:, 2]
-                .astype(str)
-                .str.replace(",", "", regex=False),
-                errors="coerce",
-            )
-    
-            # Column D should mostly be numeric quantity
-            qty_sample = pd.to_numeric(
-                raw.iloc[:, 3],
-                errors="coerce",
-            )
-    
-            sku_ratio = (
-                sku_sample.ne("").mean()
-                if len(sku_sample)
-                else 0
-            )
-    
-            price_ratio = price_sample.notna().mean()
-            qty_ratio = qty_sample.notna().mean()
-    
-            if (
-                sku_ratio >= 0.80
-                and price_ratio >= 0.70
-                and qty_ratio >= 0.70
-            ):
+        try:
+        
+        if "松賀" in filename_text:
+        
+            # Legacy structure
+            if raw.shape[1] >= 8:
                 return "TEMPLATE_6"
-    
-    except Exception:
-    pass
+        
+            # New structure
+            if raw.shape[1] == 4:
+        
+                # Column B should behave like SKU name
+                sku_sample = (
+                    raw.iloc[:, 1]
+                    .dropna()
+                    .astype(str)
+                    .map(norm_text)
+                )
+        
+                # Column C should mostly be numeric price
+                price_sample = pd.to_numeric(
+                    raw.iloc[:, 2]
+                    .astype(str)
+                    .str.replace(",", "", regex=False),
+                    errors="coerce",
+                )
+        
+                # Column D should mostly be numeric quantity
+                qty_sample = pd.to_numeric(
+                    raw.iloc[:, 3],
+                    errors="coerce",
+                )
+        
+                sku_ratio = (
+                    sku_sample.ne("").mean()
+                    if len(sku_sample)
+                    else 0
+                )
+        
+                price_ratio = price_sample.notna().mean()
+                qty_ratio = qty_sample.notna().mean()
+        
+                if (
+                    sku_ratio >= 0.80
+                    and price_ratio >= 0.70
+                    and qty_ratio >= 0.70
+                ):
+                    return "TEMPLATE_6"
+        
+        except Exception:
+        pass
 
     # ========================================================
     # TEMPLATE 8
