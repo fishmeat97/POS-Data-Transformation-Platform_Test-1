@@ -6,11 +6,6 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-
-import streamlit as st
-
-st.write("Streamlit version:", st.__version__)
-
 # ============================================================
 # UI SECTION HEADER
 # ============================================================
@@ -89,8 +84,6 @@ f"""
 # ============================================================
 # Page Config
 # ============================================================
-import streamlit as st
-
 st.set_page_config(
     page_title="POS Monthly Data Mapping",
     page_icon="🥃",
@@ -195,6 +188,18 @@ SKU_REQUIRED = [
     "SIZE",
     "CATEGORY",
 ]
+
+
+# ============================================================
+# Product Mapping Architecture
+#
+# Business SKU mapping is NAME-ONLY:
+# RAW_SKU -> normalized SKU_KEY -> SKU Mapping["SKU Name"]
+#
+# Item codes / barcodes may still be inspected internally by a
+# template detector/parser when required to understand structure,
+# but they are NOT mapping keys and are NOT part of standard output.
+# ============================================================
 
 
 # ============================================================
@@ -710,7 +715,7 @@ def transform_template_1(uploaded_file):
 # 洋酒城系列
 #
 # 商品名稱 -> RAW_SKU
-# 商品代號 -> RAW_PRODUCT_CODE
+# 商品代號 -> structure detection only
 # 實銷     -> QTY
 #
 # Customer:
@@ -843,17 +848,6 @@ def transform_template_2(uploaded_file):
     # ========================================================
     # 6. Find Product Columns
     # ========================================================
-
-    product_code_idx = next(
-        (
-            i
-            for i, header
-            in enumerate(headers)
-            if header == "商品代號"
-        ),
-        None,
-    )
-
 
     product_name_idx = next(
         (
@@ -1101,32 +1095,6 @@ def transform_template_2(uploaded_file):
     output[
         "TOTAL_PRICE"
     ] = pd.NA
-
-
-    # ========================================================
-    # 19. Product Code
-    # ========================================================
-
-    if product_code_idx is not None:
-
-        output[
-            "RAW_PRODUCT_CODE"
-        ] = (
-            data.iloc[
-                :,
-                product_code_idx
-            ]
-            .map(
-                norm_text
-            )
-            .values
-        )
-
-    else:
-
-        output[
-            "RAW_PRODUCT_CODE"
-        ] = ""
 
 
     # ========================================================
@@ -1492,7 +1460,7 @@ def transform_template_3_salesdetail(uploaded_file):
 # Multi-page Product Sales Report
 # Example: 麥金酒
 #
-# 商品貨號 -> RAW_PRODUCT_CODE
+# 商品貨號 -> structure / continuation parsing only
 # 商品名稱 -> RAW_SKU
 # 商品名稱右側欄位 -> QTY
 #
@@ -1762,9 +1730,6 @@ def transform_template_4(uploaded_file):
                         "SOURCE_INNER_ROW":
                             row_idx + 1,
 
-                        "RAW_PRODUCT_CODE":
-                            raw_product_code,
-
                         "RAW_SKU":
                             raw_sku,
 
@@ -1949,13 +1914,6 @@ def transform_template_4(uploaded_file):
     # ========================================================
     # 15. Product
     # ========================================================
-
-    output[
-        "RAW_PRODUCT_CODE"
-    ] = data[
-        "RAW_PRODUCT_CODE"
-    ].values
-
 
     output[
         "RAW_SKU"
@@ -2268,24 +2226,6 @@ def transform_template_5(uploaded_file):
     )
 
 
-    product_code_col = first_matching_column(
-        df,
-        [
-            "品項代碼（保樂力加產品） SKU code (for PRT)",
-            "SKU code (for PRT)",
-            "品項代碼",
-            "SKU code",
-        ],
-    )
-
-
-    barcode_col = first_matching_column(
-        df,
-        [
-            "產品Barcode",
-            "Barcode",
-        ],
-    )
 
 
     # ========================================================
@@ -2391,54 +2331,6 @@ def transform_template_5(uploaded_file):
             qty_col
         ]
     )
-
-
-    # ========================================================
-    # 13. Product Code
-    # ========================================================
-
-    if product_code_col is not None:
-
-        output[
-            "RAW_PRODUCT_CODE"
-        ] = (
-            df[
-                product_code_col
-            ]
-            .map(
-                norm_text
-            )
-        )
-
-    else:
-
-        output[
-            "RAW_PRODUCT_CODE"
-        ] = ""
-
-
-    # ========================================================
-    # 14. Barcode
-    # ========================================================
-
-    if barcode_col is not None:
-
-        output[
-            "RAW_BARCODE"
-        ] = (
-            df[
-                barcode_col
-            ]
-            .map(
-                norm_text
-            )
-        )
-
-    else:
-
-        output[
-            "RAW_BARCODE"
-        ] = ""
 
 
     # ========================================================
@@ -2612,7 +2504,6 @@ def transform_template_6(uploaded_file):
     DATE_COL = 0
     CUSTOMER_NO_COL = 1
     CUSTOMER_NAME_COL = 2
-    PRODUCT_CODE_COL = 3
     SKU_COL = 4
     UNIT_PRICE_COL = 5
     QTY_COL = 6
@@ -2744,23 +2635,6 @@ def transform_template_6(uploaded_file):
         df.iloc[
             :,
             CUSTOMER_NO_COL
-        ]
-        .map(
-            norm_text
-        )
-    )
-
-
-    # ========================================================
-    # 10. Product
-    # ========================================================
-
-    output[
-        "RAW_PRODUCT_CODE"
-    ] = (
-        df.iloc[
-            :,
-            PRODUCT_CODE_COL
         ]
         .map(
             norm_text
@@ -3034,12 +2908,6 @@ def transform_template_7(uploaded_file):
     )
 
 
-    product_code_col = first_matching_column(
-        df,
-        STANDARD_HEADER_MAPPING["PRODUCT_CODE"],
-    )
-
-
     customer_col = first_matching_column(
         df,
         STANDARD_HEADER_MAPPING["CUSTOMER"],
@@ -3271,24 +3139,6 @@ def transform_template_7(uploaded_file):
     output[
         "QTY"
     ] = qty
-
-
-    # ========================================================
-    # 14. Product Code
-    # ========================================================
-
-    output[
-        "RAW_PRODUCT_CODE"
-    ] = (
-        df[
-            product_code_col
-        ]
-        .map(
-            norm_text
-        )
-        if product_code_col is not None
-        else ""
-    )
 
 
     # ========================================================
@@ -4131,9 +3981,6 @@ def transform_template_8(uploaded_file):
                 # Product
                 # ---------------------------------------------
 
-                "RAW_PRODUCT_CODE":
-                    "",
-
                 "RAW_SKU":
                     sku,
 
@@ -4358,11 +4205,6 @@ def transform_template_8(uploaded_file):
     # ========================================================
 
     output[
-        "RAW_PRODUCT_CODE"
-    ] = ""
-
-
-    output[
         "RAW_SKU"
     ] = (
         data[
@@ -4532,7 +4374,7 @@ def transform_template_8(uploaded_file):
 # 品號 | 品名規格 | 淨銷數量
 #
 # Mapping:
-# 品號     -> RAW_PRODUCT_CODE
+# 品號     -> structure detection only
 # 品名規格 -> RAW_SKU
 # 淨銷數量 -> QTY
 #
@@ -4683,14 +4525,6 @@ def transform_template_9(uploaded_file):
     # 5. Find Columns
     # ========================================================
 
-    product_code_col = first_matching_column(
-        df,
-        [
-            "品號",
-        ],
-    )
-
-
     sku_col = first_matching_column(
         df,
         [
@@ -4710,13 +4544,6 @@ def transform_template_9(uploaded_file):
     # ========================================================
     # 6. Validate Required Columns
     # ========================================================
-
-    if product_code_col is None:
-
-        raise ValueError(
-            "Template 9 找不到「品號」欄位。"
-        )
-
 
     if sku_col is None:
 
@@ -4857,22 +4684,6 @@ def transform_template_9(uploaded_file):
     output[
         "RAW_ROW_CUSTOMER"
     ] = ""
-
-
-    # ========================================================
-    # 13. Product Code
-    # ========================================================
-
-    output[
-        "RAW_PRODUCT_CODE"
-    ] = (
-        df[
-            product_code_col
-        ]
-        .map(
-            norm_text
-        )
-    )
 
 
     # ========================================================
@@ -5257,11 +5068,6 @@ def transform_template_10(uploaded_file):
     # Template 10 沒有 Product Code
     # ========================================================
 
-    output[
-        "RAW_PRODUCT_CODE"
-    ] = ""
-
-
     # ========================================================
     # 16. Price
     #
@@ -5337,7 +5143,7 @@ def transform_template_10(uploaded_file):
 # TEMPLATE 11
 # 酒江村系列
 #
-# 國際條碼 -> RAW_PRODUCT_CODE
+# 國際條碼 -> structure detection only
 # 品牌     -> RAW_SKU
 # 數量     -> QTY
 # ============================================================
@@ -5360,11 +5166,6 @@ def transform_template_11(uploaded_file):
         norm_text(c)
         for c in df.columns
     ]
-
-    product_code_col = first_matching_column(
-        df,
-        ["國際條碼"],
-    )
 
     sku_col = first_matching_column(
         df,
@@ -5429,13 +5230,6 @@ def transform_template_11(uploaded_file):
     )
 
     output["RAW_ROW_CUSTOMER"] = ""
-
-    output["RAW_PRODUCT_CODE"] = (
-        df[product_code_col]
-        .map(norm_text)
-        if product_code_col is not None
-        else ""
-    )
 
     output["RAW_SKU"] = raw_sku
     output["QTY"] = qty
@@ -5513,14 +5307,6 @@ def transform_template_12(uploaded_file):
         ],
     )
 
-    product_code_col = first_matching_column(
-        df,
-        [
-            "品項代碼（保樂力加產品） SKU code (for PRT)",
-            "SKU code",
-        ],
-    )
-
     if sku_col is None:
 
         raise ValueError(
@@ -5584,12 +5370,6 @@ def transform_template_12(uploaded_file):
 
     output["RAW_SKU"] = raw_sku
     output["QTY"] = qty
-
-    output["RAW_PRODUCT_CODE"] = (
-        df[product_code_col].map(norm_text)
-        if product_code_col is not None
-        else ""
-    )
 
     output["RAW_BRAND"] = (
         df[brand_col].map(norm_text)
@@ -5971,16 +5751,6 @@ def transform_template_13(uploaded_file):
     )
 
 
-    raw_product_code = (
-        raw_product_code.loc[
-            valid
-        ]
-        .reset_index(
-            drop=True
-        )
-    )
-
-
     raw_sku = (
         raw_sku.loc[
             valid
@@ -6025,13 +5795,6 @@ def transform_template_13(uploaded_file):
     output[
         "RAW_ROW_CUSTOMER"
     ] = ""
-
-
-    output[
-        "RAW_PRODUCT_CODE"
-    ] = (
-        raw_product_code
-    )
 
 
     output[
@@ -6218,56 +5981,31 @@ def transform_template_14(uploaded_file):
     )
 
 
-  # ========================================================
+    # ========================================================
     # 7. Filter Valid SKU
     #
     # Keep:
-    # - not blank
+    # - non-blank SKU names
     # - normal product names beginning with D
+    #   (e.g. DAMORE / DALMORE / DEWAR'S)
     #
-    # Remove:
-    # - blank
-    # - D-prefixed internal-code patterns
+    # Remove only D-prefixed internal-code-like values:
+    # - D001-00-070-001
+    # - D002-12-070-003
+    # - D12345
+    # - D001/002
     #
-    # Examples removed:
-    #
-    # D001-00-070-001
-    # D002-12-070-003
-    # D123-456
-    #
-    # Examples kept:
-    #
-    # DAMORE
-    # DALMORE 12
-    # DEWAR'S
+    # Important:
+    # Do NOT remove every SKU starting with D.
     # ========================================================
-    
+
     sku_clean = (
         raw_sku
         .fillna("")
         .astype(str)
         .str.strip()
     )
-    
-    
-    # --------------------------------------------------------
-    # Internal-code-like D pattern
-    #
-    # Must:
-    # 1. start with D
-    # 2. immediately followed by digit
-    # 3. contain only digits / separators afterwards
-    #
-    # Examples:
-    # D001-00-070-001 -> True
-    # D12345          -> True
-    # D001/002        -> True
-    #
-    # DALMORE 12      -> False
-    # DAMORE          -> False
-    # DEWAR'S         -> False
-    # --------------------------------------------------------
-    
+
     is_internal_d_code = (
         sku_clean
         .str.upper()
@@ -6276,14 +6014,13 @@ def transform_template_14(uploaded_file):
             na=False,
         )
     )
-    
-    
+
     valid = (
         sku_clean.ne("")
         &
         ~is_internal_d_code
     )
-    
+
 
     # ========================================================
     # 8. Apply Filter
@@ -6438,11 +6175,6 @@ def transform_template_14(uploaded_file):
     #
     # D 開頭的商品代碼已經被排除
     # ========================================================
-
-    output[
-        "RAW_PRODUCT_CODE"
-    ] = ""
-
 
     # ========================================================
     # 17. Price
@@ -6650,8 +6382,6 @@ def transform_template_15(uploaded_file):
 
     output["RAW_ROW_CUSTOMER"] = ""
 
-    output["RAW_PRODUCT_CODE"] = ""
-
     output["RAW_SKU"] = (
         data["RAW_SKU"]
     )
@@ -6693,7 +6423,7 @@ def transform_template_15(uploaded_file):
 # 產品編號 | 產品品名             | 東門店
 # F120     | 亞伯樂 雪莉原桶-76桶 | 3
 #
-# RAW_PRODUCT_CODE = F120
+# Product code is structure-only and is not exported
 # RAW_SKU          = 亞伯樂 雪莉原桶-76桶
 # QTY              = 3
 #
@@ -6988,24 +6718,6 @@ def transform_template_16(uploaded_file):
 
 
     # ========================================================
-    # 7. Find Product Code Column
-    # ========================================================
-
-    product_code_col = first_matching_column(
-        df,
-        product_code_aliases,
-    )
-
-
-    if product_code_col is None:
-
-        raise ValueError(
-            "Template 16 找不到產品編號欄位。"
-            f" Available Columns={list(df.columns)}"
-        )
-
-
-    # ========================================================
     # 8. Find SKU Column
     # ========================================================
 
@@ -7082,20 +6794,6 @@ def transform_template_16(uploaded_file):
 
 
     # ========================================================
-    # 10. Prepare Raw Product Code
-    # ========================================================
-
-    raw_product_code = (
-        df[
-            product_code_col
-        ]
-        .map(
-            norm_text
-        )
-    )
-
-
-    # ========================================================
     # 11. Prepare Raw SKU
     # ========================================================
 
@@ -7139,35 +6837,27 @@ def transform_template_16(uploaded_file):
 
 
     # ========================================================
-    # 14. Remove Obvious Header / Total Rows
+    # 14. Remove Obvious Header / Total Rows by SKU text
+    #
+    # Item Code is intentionally not used as a business key.
     # ========================================================
 
-    product_code_key = (
-        raw_product_code
-        .map(
-            norm_key
-        )
-    )
+    sku_key = raw_sku.map(norm_key)
 
-
-    invalid_code_keys = {
+    invalid_sku_keys = {
         norm_key("TOTAL"),
         norm_key("合計"),
         norm_key("總計"),
-        norm_key("NO"),
-        norm_key("NO."),
-        norm_key("產品編號"),
-        norm_key("商品編號"),
-        norm_key("品號"),
+        norm_key("產品品名"),
+        norm_key("產品名稱"),
+        norm_key("商品名稱"),
+        norm_key("品名"),
     }
-
 
     valid = (
         valid
         &
-        ~product_code_key.isin(
-            invalid_code_keys
-        )
+        ~sku_key.isin(invalid_sku_keys)
     )
 
 
@@ -7177,16 +6867,6 @@ def transform_template_16(uploaded_file):
 
     df = (
         df.loc[
-            valid
-        ]
-        .reset_index(
-            drop=True
-        )
-    )
-
-
-    raw_product_code = (
-        raw_product_code.loc[
             valid
         ]
         .reset_index(
@@ -7271,15 +6951,6 @@ def transform_template_16(uploaded_file):
     output[
         "RAW_ROW_CUSTOMER"
     ] = ""
-
-
-    # ========================================================
-    # 20. Product Code
-    # ========================================================
-
-    output[
-        "RAW_PRODUCT_CODE"
-    ] = raw_product_code
 
 
     # ========================================================
@@ -8749,44 +8420,16 @@ def transform_template_17(uploaded_file):
 
 
     # ========================================================
-    # 5. Optional Unit Filter
+    # 5. Preserve Parsed Product Rows
     #
-    # IMPORTANT:
-    #
-    # 若沿用你原本駱北 / 全億規則：
-    # 只保留 瓶 / 盒 / 組
-    #
-    # 如果你之後決定連 箱 都要，
-    # 把 箱 加進 allowed_units 即可。
+    # Do NOT filter by unit here.
+    # Units such as 箱 / 瓶 / 盒 / 組 are kept for audit, because
+    # valid alcoholic products may also be sold by case.
+    # Product validity is handled downstream through SKU Mapping
+    # instead of deleting source rows during transformation.
     # ========================================================
 
-    allowed_units = {
-        "瓶",
-        "盒",
-        "組",
-    }
-
-
-    data = (
-        data[
-            data[
-                "RAW_UNIT"
-            ].isin(
-                allowed_units
-            )
-        ]
-        .copy()
-        .reset_index(
-            drop=True
-        )
-    )
-
-
-    if data.empty:
-
-        raise ValueError(
-            "Template 17 經單位篩選後沒有有效商品資料。"
-        )
+    data = data.reset_index(drop=True)
 
 
     # ========================================================
@@ -14039,7 +13682,6 @@ audit_columns = [
     "RAW_ROW_CUSTOMER",
 
     "RAW_SKU",
-    "RAW_PRODUCT_CODE",
 
     "QTY",
 
@@ -14343,7 +13985,6 @@ audit_export_columns = [
     # --------------------------------------------------------
     # Raw Product
     # --------------------------------------------------------
-    "RAW_PRODUCT_CODE",
     "RAW_SKU",
     "RAW_BRAND",
     "RAW_SIZE",
