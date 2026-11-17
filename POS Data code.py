@@ -2168,13 +2168,13 @@ def transform_template_5(uploaded_file):
             header=None,
         )
 
-else:
-
-    raw = pd.read_excel(
-        uploaded_file,
-        sheet_name=0,
-        header=None,
-    )
+    else:
+    
+        raw = pd.read_excel(
+            uploaded_file,
+            sheet_name=0,
+            header=None,
+        )
 
 
     if raw.empty:
