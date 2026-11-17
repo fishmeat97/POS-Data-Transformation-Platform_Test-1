@@ -7594,9 +7594,9 @@ def detect_template_type(uploaded_file):
                 return "TEMPLATE_1"
 
 
-        except Exception:
+    except Exception:
 
-            pass
+        pass
 
 
 
