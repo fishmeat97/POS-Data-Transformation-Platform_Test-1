@@ -14535,6 +14535,11 @@ customer_unmapped_export = (
 # 6. SKU UNMAPPED
 # ============================================================
 
+# ============================================================
+# 6. SKU UNMAPPED
+# For SKU Mapping Database Update
+# ============================================================
+
 sku_unmapped_mask = (
     detail[
         "SKU_MAPPING_STATUS"
@@ -14546,14 +14551,64 @@ sku_unmapped_mask = (
 sku_unmapped_export = (
     detail.loc[
         sku_unmapped_mask,
-        audit_export_columns,
+        [
+            "RAW_SKU",
+        ],
     ]
     .copy()
+)
+
+
+# Clean SKU
+sku_unmapped_export[
+    "RAW_SKU"
+] = (
+    sku_unmapped_export[
+        "RAW_SKU"
+    ]
+    .map(norm_text)
+)
+
+
+# Remove blank SKU
+sku_unmapped_export = (
+    sku_unmapped_export[
+        sku_unmapped_export[
+            "RAW_SKU"
+        ]
+        .ne("")
+    ]
+    .copy()
+)
+
+
+# Remove duplicated SKU
+sku_unmapped_export = (
+    sku_unmapped_export
+    .drop_duplicates(
+        subset=[
+            "RAW_SKU",
+        ]
+    )
+    .sort_values(
+        by="RAW_SKU"
+    )
     .reset_index(
         drop=True
     )
 )
 
+
+# Rename directly to SKU Mapping key
+sku_unmapped_export = (
+    sku_unmapped_export
+    .rename(
+        columns={
+            "RAW_SKU":
+                "SKU Name",
+        }
+    )
+)
 
 # ============================================================
 # 7. ALL UNMAPPED
