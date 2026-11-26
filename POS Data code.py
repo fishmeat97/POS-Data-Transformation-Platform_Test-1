@@ -989,7 +989,12 @@ def transform_template_1(uploaded_file):
             or qty_col is None
         ):
             continue
-
+        if not has_valid_sku_qty_data(
+            df,
+            sku_col,
+            qty_col,
+        ):
+            continue
 
         # ====================================================
         # Optional columns
