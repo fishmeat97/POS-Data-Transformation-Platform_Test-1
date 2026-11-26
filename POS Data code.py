@@ -7792,47 +7792,147 @@ def detect_template_type(uploaded_file):
 
     # ========================================================
     # 13. T3A - 國泰 multi-sheet
+    #
+    # IMPORTANT:
+    # - Exact header matching only
+    # - 品名規格 + 數量 / 數量2
+    # - Must contain actual SKU + numeric QTY data
+    # - Returns TEMPLATE_3A directly
     # ========================================================
     try:
         if len(candidate_sheets) > 1:
             for sheet_name, raw in candidate_sheets:
-                for i in range(min(10, len(raw))):
-                    values = [
-                        norm_key(v)
+                for i in range(min(15, len(raw))):
+
+                    raw_values = [
+                        norm_text(v)
                         for v in raw.iloc[i].tolist()
-                        if norm_text(v)
                     ]
 
-                    if (
-                        norm_key("品名規格") in values
-                        and (
-                            norm_key("數量") in values
-                            or norm_key("數量2") in values
-                        )
+                    value_keys = {
+                        norm_key(v)
+                        for v in raw_values
+                        if norm_text(v)
+                    }
+
+                    has_sku = (
+                        norm_key("品名規格")
+                        in value_keys
+                    )
+
+                    has_qty = (
+                        norm_key("數量")
+                        in value_keys
+                        or
+                        norm_key("數量2")
+                        in value_keys
+                    )
+
+                    if not (has_sku and has_qty):
+                        continue
+
+                    headers = [
+                        norm_text(v)
+                        for v in raw.iloc[i].tolist()
+                    ]
+
+                    df_check = raw.iloc[i + 1:].copy()
+                    df_check.columns = headers
+                    df_check = df_check.dropna(how="all")
+
+                    if df_check.empty:
+                        continue
+
+                    sku_col = first_matching_column(
+                        df_check,
+                        ["品名規格"],
+                    )
+
+                    qty_col = first_matching_column(
+                        df_check,
+                        ["數量2", "數量"],
+                    )
+
+                    if has_valid_sku_qty_data(
+                        df_check,
+                        sku_col,
+                        qty_col,
                     ):
-                        return "TEMPLATE_3"
+                        return "TEMPLATE_3A"
+
     except Exception:
         pass
 
     # ========================================================
     # 14. T3B - 加州洋酒
+    #
+    # IMPORTANT:
+    # - Exact header matching only
+    # - 貨品名稱 + 數量 / 數 量
+    # - Do NOT allow 淨銷數量 to match generic 數量
+    # - Must contain actual SKU + numeric QTY data
+    # - Returns TEMPLATE_3B directly
     # ========================================================
     try:
         for sheet_name, raw in candidate_sheets:
             for i in range(min(40, len(raw))):
-                values = [norm_text(v) for v in raw.iloc[i].tolist()]
 
-                has_product = any(
-                    header_matches(value, "貨品名稱")
-                    for value in values
-                )
-                has_qty = any(
-                    header_matches(value, "數量")
-                    for value in values
+                raw_values = [
+                    norm_text(v)
+                    for v in raw.iloc[i].tolist()
+                ]
+
+                value_keys = {
+                    norm_key(v)
+                    for v in raw_values
+                    if norm_text(v)
+                }
+
+                has_product = (
+                    norm_key("貨品名稱")
+                    in value_keys
                 )
 
-                if has_product and has_qty:
-                    return "TEMPLATE_3"
+                has_qty = (
+                    norm_key("數量")
+                    in value_keys
+                    or
+                    norm_key("數 量")
+                    in value_keys
+                )
+
+                if not (has_product and has_qty):
+                    continue
+
+                headers = [
+                    norm_text(v)
+                    for v in raw.iloc[i].tolist()
+                ]
+
+                df_check = raw.iloc[i + 1:].copy()
+                df_check.columns = headers
+                df_check = df_check.dropna(how="all")
+
+                if df_check.empty:
+                    continue
+
+                sku_col = first_matching_column(
+                    df_check,
+                    ["貨品名稱"],
+                )
+
+                qty_col = first_matching_column(
+                    df_check,
+                    ["數 量", "數量"],
+                )
+
+                if has_valid_sku_qty_data(
+                    df_check,
+                    sku_col,
+                    qty_col,
+                ):
+                    return "TEMPLATE_3B"
+
     except Exception:
         pass
 
@@ -8389,11 +8489,48 @@ def auto_transform_template(
 
 
     # ========================================================
-    # TEMPLATE 3
+    # TEMPLATE 3A
+    # 國泰 multi-sheet
+    # ========================================================
+
+    elif template_type == "TEMPLATE_3A":
+
+        uploaded_file.seek(0)
+
+        result = transform_template_3_multisheet(
+            uploaded_file
+        )
+
+        return (
+            result,
+            "Template 3A｜品名規格 / 數量多工作表銷售明細",
+        )
+
+
+    # ========================================================
+    # TEMPLATE 3B
+    # 加州洋酒 sales detail
+    # ========================================================
+
+    elif template_type == "TEMPLATE_3B":
+
+        uploaded_file.seek(0)
+
+        result = transform_template_3_salesdetail(
+            uploaded_file
+        )
+
+        return (
+            result,
+            "Template 3B｜貨品名稱 / 數量銷貨明細",
+        )
+
+
+    # ========================================================
+    # LEGACY TEMPLATE 3 FALLBACK
     #
-    # Do NOT decide 3A/3B merely by worksheet count.
-    # Try the specific T3A structure first; if no valid T3A
-    # worksheet exists, then try T3B across all worksheets.
+    # Keep this only for older session state / manual input.
+    # New detector no longer returns TEMPLATE_3.
     # ========================================================
 
     elif template_type == "TEMPLATE_3":
@@ -8401,38 +8538,27 @@ def auto_transform_template(
         t3a_error = None
 
         try:
-
             uploaded_file.seek(0)
-
             result = transform_template_3_multisheet(
                 uploaded_file
             )
-
             return (
                 result,
                 "Template 3A｜品名規格 / 數量多工作表銷售明細",
             )
-
         except Exception as e:
-
             t3a_error = e
 
-
         try:
-
             uploaded_file.seek(0)
-
             result = transform_template_3_salesdetail(
                 uploaded_file
             )
-
             return (
                 result,
                 "Template 3B｜貨品名稱 / 數量銷貨明細",
             )
-
         except Exception as t3b_error:
-
             raise ValueError(
                 "Template 3 無法轉換。"
                 f" T3A={t3a_error};"
