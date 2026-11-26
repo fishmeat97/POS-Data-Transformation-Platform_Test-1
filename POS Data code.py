@@ -1,3 +1,18 @@
+# ============================================================
+# CHANGE LOG (Code Review Fixes)
+#
+# FIX #1  Unmapped 預覽錯位：build_report() 不再排序，
+#         改用 sort_final_report() 只在顯示 / 匯出時排序，
+#         讓 final_report 與 detail 的列順序保持一致。
+# FIX #2  detect_error NameError：例外訊息在 except 區塊內先存起來。
+# FIX #3  Template 1 SOURCE_SHEET 全部 NaN：temp 先建立 index。
+# FIX #4  ZIP / 多檔上傳加入 .txt，Template 17 才能被處理。
+# FIX #5  Template 7 支援 CSV（原本只用 read_excel）。
+# FIX #6  單工作表 Template（T2/T3B/T5/T7/T9/T11/T12/T13/T16）
+#         改用 resolve_target_sheet() 找到真正有表頭的工作表，
+#         與 detect_template_type() 的多工作表掃描一致。
+# ============================================================
+
 import io
 import re
 import unicodedata
@@ -522,6 +537,264 @@ def read_excel_all_sheets(
         header=header,
     )
 
+# ============================================================
+# FIX #6: Target Sheet Resolver
+#
+# detect_template_type() 會掃描所有工作表，
+# 但多數 transform 原本只讀第一張工作表 (sheet_name=0)。
+# 這裡找出第一張「表頭符合」的工作表，讓轉換讀到同一張。
+# ============================================================
+
+def resolve_target_sheet(
+    uploaded_file,
+    header_test,
+):
+
+    suffix = Path(
+        uploaded_file.name
+    ).suffix.lower()
+
+    if suffix in [".csv", ".txt"]:
+        return 0
+
+    try:
+
+        sheets = read_excel_all_sheets(
+            uploaded_file,
+            header=None,
+        )
+
+    except Exception:
+
+        uploaded_file.seek(0)
+        return 0
+
+    uploaded_file.seek(0)
+
+    if not isinstance(sheets, dict) or not sheets:
+        return 0
+
+    first_sheet = next(
+        iter(sheets.keys())
+    )
+
+    for sheet_name, raw in sheets.items():
+
+        if raw is None or raw.empty:
+            continue
+
+        try:
+
+            if header_test(raw):
+                return sheet_name
+
+        except Exception:
+            continue
+
+    return first_sheet
+
+
+def sheet_label(
+    uploaded_file,
+    target_sheet,
+):
+
+    suffix = Path(
+        uploaded_file.name
+    ).suffix.lower()
+
+    if suffix == ".csv":
+        return "CSV"
+
+    return str(target_sheet)
+
+
+def _header_rows(raw, max_rows):
+
+    for i in range(
+        min(
+            max_rows,
+            len(raw),
+        )
+    ):
+
+        yield [
+            norm_text(value)
+            for value
+            in raw.iloc[i].tolist()
+        ]
+
+
+def sheet_has_t2_header(raw):
+
+    return any(
+        "商品代號" in values
+        and "商品名稱" in values
+        for values in _header_rows(raw, 20)
+    )
+
+
+def sheet_has_t3b_header(raw):
+
+    return any(
+        "貨品名稱" in values
+        and any(
+            "數" in x and "量" in x
+            for x in values
+        )
+        for values in _header_rows(raw, 30)
+    )
+
+
+def sheet_has_t5_header(raw):
+
+    for values in _header_rows(raw, 10):
+
+        has_sku = any(
+            ("品項名稱" in v and "SKU Name" in v)
+            or v == "品項名稱"
+            for v in values
+        )
+
+        has_qty = any(
+            ("銷量" in v and "Quantity" in v)
+            or v == "銷量"
+            for v in values
+        )
+
+        if has_sku and has_qty:
+            return True
+
+    return False
+
+
+def sheet_has_sku_qty_header(raw):
+
+    return (
+        find_header_row(
+            raw,
+            required_fields=["SKU", "QTY"],
+            max_rows=30,
+        )
+        is not None
+    )
+
+
+def sheet_has_t9_header(raw):
+
+    targets = {
+        norm_key("品號"),
+        norm_key("品名規格"),
+        norm_key("淨銷數量"),
+    }
+
+    for values in _header_rows(raw, 20):
+
+        keys = {
+            norm_key(v)
+            for v in values
+            if v
+        }
+
+        if targets.issubset(keys):
+            return True
+
+    return False
+
+
+def sheet_has_t11_header(raw):
+
+    keys = {
+        norm_key(v)
+        for v in next(_header_rows(raw, 1), [])
+        if v
+    }
+
+    return (
+        norm_key("品牌") in keys
+        and norm_key("數量") in keys
+    )
+
+
+def sheet_has_t12_header(raw):
+
+    return any(
+        norm_key("品項名稱") in norm_key(v)
+        for v in next(_header_rows(raw, 1), [])
+        if v
+    )
+
+
+def sheet_has_t13_header(raw):
+
+    months = {
+        "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+        "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+    }
+
+    return any(
+        len(
+            months.intersection(
+                {v.upper() for v in values}
+            )
+        ) >= 6
+        for values in _header_rows(raw, 30)
+    )
+
+
+T16_PRODUCT_CODE_ALIASES = [
+    "產品編號",
+    "產品代號",
+    "商品編號",
+    "商品代號",
+    "商品號碼",
+    "貨品編號",
+    "貨品代號",
+    "貨品號碼",
+    "品號",
+    "SKU Code",
+]
+
+
+T16_PRODUCT_NAME_ALIASES = [
+    "產品品名",
+    "產品名稱",
+    "商品名稱",
+    "商品品名",
+    "貨品名稱",
+    "品項名稱",
+    "品名",
+    "SKU Name",
+    "Product Name",
+]
+
+
+def sheet_has_t16_header(raw):
+
+    code_keys = {
+        norm_key(a)
+        for a in T16_PRODUCT_CODE_ALIASES
+    }
+
+    name_keys = {
+        norm_key(a)
+        for a in T16_PRODUCT_NAME_ALIASES
+    }
+
+    for values in _header_rows(raw, 30):
+
+        keys = {
+            norm_key(v)
+            for v in values
+            if v
+        }
+
+        if keys & code_keys and keys & name_keys:
+            return True
+
+    return False
+
+
 def first_matching_column(df, keywords):
     columns = list(df.columns)
 
@@ -1035,7 +1308,10 @@ def transform_template_1(uploaded_file):
         # Temporary standardized frame
         # ====================================================
 
-        temp = pd.DataFrame()
+        # FIX #3: 先建立 index，否則純量 sheet_name 會變成 NaN
+        temp = pd.DataFrame(
+            index=df.index
+        )
 
         temp[
             "SOURCE_SHEET"
@@ -1286,6 +1562,12 @@ def transform_template_2(uploaded_file):
         uploaded_file.name
     )
 
+    # FIX #6: 偵測會掃所有工作表，轉換也要讀到同一張工作表
+    target_sheet = resolve_target_sheet(
+        uploaded_file,
+        sheet_has_t2_header,
+    )
+
 
     # ========================================================
     # 2. Read Excel
@@ -1293,7 +1575,7 @@ def transform_template_2(uploaded_file):
 
     raw = read_excel_bytes(
         uploaded_file,
-        sheet_name=0,
+        sheet_name=target_sheet,
         header=None,
     )
 
@@ -1843,9 +2125,15 @@ def transform_template_3_salesdetail(uploaded_file):
         uploaded_file.name
     )
 
+    # FIX #6: 偵測會掃所有工作表，轉換也要讀到同一張工作表
+    target_sheet = resolve_target_sheet(
+        uploaded_file,
+        sheet_has_t3b_header,
+    )
+
     raw = read_excel_bytes(
         uploaded_file,
-        sheet_name=0,
+        sheet_name=target_sheet,
         header=None,
     )
 
@@ -1888,7 +2176,7 @@ def transform_template_3_salesdetail(uploaded_file):
 
     df = pd.read_excel(
         uploaded_file,
-        sheet_name=0,
+        sheet_name=target_sheet,
         header=header_row,
     )
 
@@ -2584,6 +2872,12 @@ def transform_template_5(uploaded_file):
         uploaded_file.name
     )
 
+    # FIX #6: 偵測會掃所有工作表，轉換也要讀到同一張工作表
+    target_sheet = resolve_target_sheet(
+        uploaded_file,
+        sheet_has_t5_header,
+    )
+
 
     # ========================================================
     # 2. Read Raw Excel
@@ -2610,7 +2904,7 @@ def transform_template_5(uploaded_file):
     
         raw = pd.read_excel(
             uploaded_file,
-            sheet_name=0,
+            sheet_name=target_sheet,
             header=None,
         )
 
@@ -2708,7 +3002,7 @@ def transform_template_5(uploaded_file):
     
         df = pd.read_excel(
             uploaded_file,
-            sheet_name=0,
+            sheet_name=target_sheet,
             header=header_row,
         )
 
@@ -2862,7 +3156,10 @@ def transform_template_5(uploaded_file):
 
     output[
         "SOURCE_SHEET"
-    ] = "POS公版"
+    ] = sheet_label(
+        uploaded_file,
+        target_sheet,
+    )
 
 
     # ========================================================
@@ -3590,6 +3887,12 @@ def transform_template_7(uploaded_file):
         uploaded_file.name
     )
 
+    # FIX #6: 偵測會掃所有工作表，轉換也要讀到同一張工作表
+    target_sheet = resolve_target_sheet(
+        uploaded_file,
+        sheet_has_sku_qty_header,
+    )
+
 
     # ========================================================
     # 2. Read Raw Excel
@@ -3597,11 +3900,25 @@ def transform_template_7(uploaded_file):
 
     uploaded_file.seek(0)
 
-    raw = pd.read_excel(
-        uploaded_file,
-        sheet_name=0,
-        header=None,
-    )
+    suffix = Path(
+        uploaded_file.name
+    ).suffix.lower()
+
+    # FIX #5: CSV 也可能被偵測成 Template 7
+    if suffix == ".csv":
+
+        raw = read_csv_flexible(
+            uploaded_file,
+            header=None,
+        )
+
+    else:
+
+        raw = pd.read_excel(
+            uploaded_file,
+            sheet_name=target_sheet,
+            header=None,
+        )
 
 
     if raw.empty:
@@ -3638,11 +3955,20 @@ def transform_template_7(uploaded_file):
 
     uploaded_file.seek(0)
 
-    df = pd.read_excel(
-        uploaded_file,
-        sheet_name=0,
-        header=header_row,
-    )
+    if suffix == ".csv":
+
+        df = read_csv_flexible(
+            uploaded_file,
+            header=header_row,
+        )
+
+    else:
+
+        df = pd.read_excel(
+            uploaded_file,
+            sheet_name=target_sheet,
+            header=header_row,
+        )
 
 
     df.columns = [
@@ -3862,7 +4188,10 @@ def transform_template_7(uploaded_file):
 
     output[
         "SOURCE_SHEET"
-    ] = "工作表1"
+    ] = sheet_label(
+        uploaded_file,
+        target_sheet,
+    )
 
 
     # ========================================================
@@ -5162,6 +5491,12 @@ def transform_template_9(uploaded_file):
         uploaded_file.name
     )
 
+    # FIX #6: 偵測會掃所有工作表，轉換也要讀到同一張工作表
+    target_sheet = resolve_target_sheet(
+        uploaded_file,
+        sheet_has_t9_header,
+    )
+
 
     # ========================================================
     # 2. Read Raw Excel
@@ -5171,7 +5506,7 @@ def transform_template_9(uploaded_file):
 
     raw = pd.read_excel(
         uploaded_file,
-        sheet_name=0,
+        sheet_name=target_sheet,
         header=None,
     )
 
@@ -5265,7 +5600,7 @@ def transform_template_9(uploaded_file):
 
     df = pd.read_excel(
         uploaded_file,
-        sheet_name=0,
+        sheet_name=target_sheet,
         header=header_row,
     )
 
@@ -5428,7 +5763,10 @@ def transform_template_9(uploaded_file):
 
     output[
         "SOURCE_SHEET"
-    ] = "工作表1"
+    ] = sheet_label(
+        uploaded_file,
+        target_sheet,
+    )
 
 
     # ========================================================
@@ -5921,11 +6259,17 @@ def transform_template_11(uploaded_file):
         uploaded_file.name
     )
 
+    # FIX #6: 偵測會掃所有工作表，轉換也要讀到同一張工作表
+    target_sheet = resolve_target_sheet(
+        uploaded_file,
+        sheet_has_t11_header,
+    )
+
     uploaded_file.seek(0)
 
     df = pd.read_excel(
         uploaded_file,
-        sheet_name=0,
+        sheet_name=target_sheet,
         header=0,
     )
 
@@ -5990,7 +6334,10 @@ def transform_template_11(uploaded_file):
         2 + len(df),
     )
 
-    output["SOURCE_SHEET"] = "工作表1"
+    output["SOURCE_SHEET"] = sheet_label(
+        uploaded_file,
+        target_sheet,
+    )
 
     output["RAW_CUSTOMER"] = (
         meta["FILE_RAWDATA_NAME"]
@@ -6029,11 +6376,17 @@ def transform_template_12(uploaded_file):
         uploaded_file.name
     )
 
+    # FIX #6: 偵測會掃所有工作表，轉換也要讀到同一張工作表
+    target_sheet = resolve_target_sheet(
+        uploaded_file,
+        sheet_has_t12_header,
+    )
+
     uploaded_file.seek(0)
 
     df = pd.read_excel(
         uploaded_file,
-        sheet_name=0,
+        sheet_name=target_sheet,
         header=0,
     )
 
@@ -6123,10 +6476,9 @@ def transform_template_12(uploaded_file):
         2 + len(df),
     )
 
-    output["SOURCE_SHEET"] = (
-        str(pd.ExcelFile(uploaded_file).sheet_names[0])
-        if False
-        else "Sheet1"
+    output["SOURCE_SHEET"] = sheet_label(
+        uploaded_file,
+        target_sheet,
     )
 
     output["RAW_CUSTOMER"] = (
@@ -6192,6 +6544,12 @@ def transform_template_13(uploaded_file):
 
     meta = parse_filename(
         uploaded_file.name
+    )
+
+    # FIX #6: 偵測會掃所有工作表，轉換也要讀到同一張工作表
+    target_sheet = resolve_target_sheet(
+        uploaded_file,
+        sheet_has_t13_header,
     )
 
 
@@ -6264,7 +6622,7 @@ def transform_template_13(uploaded_file):
 
     raw = pd.read_excel(
         uploaded_file,
-        sheet_name=0,
+        sheet_name=target_sheet,
         header=None,
         engine="calamine",
     )
@@ -7208,6 +7566,12 @@ def transform_template_16(uploaded_file):
         uploaded_file.name
     )
 
+    # FIX #6: 偵測會掃所有工作表，轉換也要讀到同一張工作表
+    target_sheet = resolve_target_sheet(
+        uploaded_file,
+        sheet_has_t16_header,
+    )
+
     suffix = Path(
         uploaded_file.name
     ).suffix.lower()
@@ -7234,7 +7598,7 @@ def transform_template_16(uploaded_file):
 
         raw = pd.read_excel(
             uploaded_file,
-            sheet_name=0,
+            sheet_name=target_sheet,
             header=None,
             engine="openpyxl",
         )
@@ -7248,7 +7612,7 @@ def transform_template_16(uploaded_file):
 
             raw = pd.read_excel(
                 uploaded_file,
-                sheet_name=0,
+                sheet_name=target_sheet,
                 header=None,
                 engine="xlrd",
             )
@@ -7259,7 +7623,7 @@ def transform_template_16(uploaded_file):
 
             raw = pd.read_excel(
                 uploaded_file,
-                sheet_name=0,
+                sheet_name=target_sheet,
                 header=None,
             )
 
@@ -7411,7 +7775,7 @@ def transform_template_16(uploaded_file):
 
         df = pd.read_excel(
             uploaded_file,
-            sheet_name=0,
+            sheet_name=target_sheet,
             header=header_row,
             engine="openpyxl",
         )
@@ -7425,7 +7789,7 @@ def transform_template_16(uploaded_file):
 
             df = pd.read_excel(
                 uploaded_file,
-                sheet_name=0,
+                sheet_name=target_sheet,
                 header=header_row,
                 engine="xlrd",
             )
@@ -7436,7 +7800,7 @@ def transform_template_16(uploaded_file):
 
             df = pd.read_excel(
                 uploaded_file,
-                sheet_name=0,
+                sheet_name=target_sheet,
                 header=header_row,
             )
 
@@ -11854,37 +12218,13 @@ def build_report(detail):
 
 
     # ========================================================
-    # 12. OPTIONAL SORT
+    # 12. NO SORT HERE
     #
-    # 只排序
-    # 不會合併或刪除資料
+    # FIX #1:
+    # 保持與 detail 相同的列順序，
+    # Unmapped 預覽用 mask 對齊時才不會錯位。
+    # 排序改由 sort_final_report() 在顯示 / 匯出時處理。
     # ========================================================
-
-    sort_columns = [
-        column
-        for column in [
-            "年",
-            "月",
-            "店家編號",
-            "品項",
-        ]
-        if column in report.columns
-    ]
-
-
-    if sort_columns:
-
-        report = (
-            report
-            .sort_values(
-                by=sort_columns,
-                na_position="last",
-                kind="stable",
-            )
-            .reset_index(
-                drop=True
-            )
-        )
 
 
     # ========================================================
@@ -11899,6 +12239,41 @@ def build_report(detail):
     # ========================================================
 
     return report
+
+
+# ============================================================
+# FIX #1: Sorted copy for display / export only
+# ============================================================
+
+def sort_final_report(report):
+
+    sort_columns = [
+        column
+        for column in [
+            "年",
+            "月",
+            "店家編號",
+            "品項",
+        ]
+        if column in report.columns
+    ]
+
+    if not sort_columns:
+        return report.copy()
+
+    return (
+        report
+        .sort_values(
+            by=sort_columns,
+            na_position="last",
+            kind="stable",
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+
 # ============================================================
 # Excel Export
 # Removes characters that Excel / openpyxl cannot write.
@@ -12131,7 +12506,7 @@ upload_mode = st.radio(
     "Upload Method",
     [
         "📦 ZIP File (批次上傳)",
-        "📄 Excel / CSV (多檔上傳)",
+        "📄 Excel / CSV / TXT (多檔上傳)",
     ],
     horizontal=True,
 )
@@ -12208,10 +12583,12 @@ if upload_mode == "📦 ZIP File (批次上傳)":
                     # Supported Formats
                     # ========================================
 
+                    # FIX #4: 加入 .txt（Template 17 駱北）
                     if suffix not in [
                         ".xlsx",
                         ".xls",
                         ".csv",
+                        ".txt",
                     ]:
 
                         ignored_files.append(
@@ -12380,7 +12757,7 @@ if upload_mode == "📦 ZIP File (批次上傳)":
 
                 st.warning(
                     "ZIP 裡沒有找到可處理的 "
-                    "Excel / CSV 檔案。"
+                    "Excel / CSV / TXT 檔案。"
                 )
 
 
@@ -12409,11 +12786,13 @@ if upload_mode == "📦 ZIP File (批次上傳)":
 else:
 
     uploaded_files = st.file_uploader(
-        "可一次上傳多個 Excel / CSV Template",
+        "可一次上傳多個 Excel / CSV / TXT Template",
+        # FIX #4: 加入 txt（Template 17 駱北）
         type=[
             "xlsx",
             "xls",
             "csv",
+            "txt",
         ],
         accept_multiple_files=True,
         key="templates",
@@ -12871,6 +13250,9 @@ for file in template_files:
 
     detect_start_time = time.perf_counter()
 
+    # FIX #2: except 結束後 detect_error 會被刪除，先存訊息
+    detect_error_message = ""
+
 
     try:
 
@@ -12887,6 +13269,11 @@ for file in template_files:
 
 
     except Exception as detect_error:
+
+        detect_error_message = (
+            f"{type(detect_error).__name__}: "
+            f"{detect_error}"
+        )
 
         detected_type_code = "DETECTION_ERROR"
 
@@ -12932,9 +13319,7 @@ for file in template_files:
                 "FAILED",
 
             "錯誤":
-                str(
-                    detect_error
-                ),
+                detect_error_message,
 
             "原始筆數":
                 0,
@@ -13312,6 +13697,13 @@ detail = attach_sku_mapping(
 
 final_report = build_report(
     detail
+)
+
+
+# FIX #1: 顯示 / 匯出用排序後的副本；
+# final_report 本身維持與 detail 對齊
+final_report_sorted = sort_final_report(
+    final_report
 )
 
 
@@ -15090,7 +15482,7 @@ tabs = st.tabs([
 # Final Report
 with tabs[0]:
     st.dataframe(
-        final_report,
+        final_report_sorted,
         use_container_width=True,
         hide_index=True,
         height=550,
@@ -15852,6 +16244,7 @@ else:
 
 export_dataframes = [
     final_report,
+    final_report_sorted,
     upload_log,
     submission_export,
     sales_submission_export,
@@ -15889,7 +16282,7 @@ workbook_sheets = {
     # Main Report
     # --------------------------------------------------------
     "Final Report":
-        final_report,
+        final_report_sorted,
 
     # --------------------------------------------------------
     # File Processing
@@ -16007,7 +16400,7 @@ workbook = excel_bytes(
 # ============================================================
 
 final_csv = (
-    final_report
+    final_report_sorted
     .to_csv(
         index=False
     )
