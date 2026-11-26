@@ -7837,6 +7837,22 @@ def transform_template_16(uploaded_file):
 #   actual valid quantity data before it is considered valid
 # ============================================================
 
+# ============================================================
+# AUTO DETECT TEMPLATE TYPE
+#
+# Multi-sheet safe version
+#
+# Rules:
+# 1. Strong filename rules first
+# 2. TXT / CSV handled separately
+# 3. Excel scans ALL worksheets
+# 4. Empty / invalid worksheets are ignored
+# 5. For normal SKU/QTY templates:
+#       SKU column must exist
+#       QTY column must exist
+#       at least one valid SKU + QTY row must exist
+# ============================================================
+
 def detect_template_type(uploaded_file):
 
     # ========================================================
@@ -7856,10 +7872,9 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # 1. Strong Filename Rules
+    # 1. STRONG FILENAME RULES
     #
-    # These templates are sufficiently specific that filename
-    # rules should run before workbook structure detection.
+    # These should be checked before workbook structure.
     # ========================================================
 
 
@@ -7901,6 +7916,32 @@ def detect_template_type(uploaded_file):
     ):
 
         return "TEMPLATE_16"
+
+
+    # --------------------------------------------------------
+    # TEMPLATE 8
+    # 唯君
+    # --------------------------------------------------------
+
+    if (
+        "唯君"
+        in filename_text
+    ):
+
+        return "TEMPLATE_8"
+
+
+    # --------------------------------------------------------
+    # TEMPLATE 7
+    # 匯眾
+    # --------------------------------------------------------
+
+    if (
+        "匯眾"
+        in filename_text
+    ):
+
+        return "TEMPLATE_7"
 
 
     # ========================================================
@@ -7962,29 +8003,14 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # 3. Filename Special Rule
-    #
-    # 匯眾 -> Template 7
-    # ========================================================
-
-    if (
-        "匯眾"
-        in filename_text
-    ):
-
-        return "TEMPLATE_7"
-
-
-    # ========================================================
-    # 4. CSV FILES
+    # 3. CSV
     # ========================================================
 
     if suffix == ".csv":
 
-        # ----------------------------------------------------
-        # CSV Template 5
-        # PRT Standard POS
-        # ----------------------------------------------------
+        # ====================================================
+        # 3A. Read CSV raw
+        # ====================================================
 
         try:
 
@@ -7996,14 +8022,23 @@ def detect_template_type(uploaded_file):
             )
 
 
+        except Exception:
+
+            return "UNKNOWN"
+
+
+        # ====================================================
+        # 3B. TEMPLATE 5
+        # PRT Standard POS
+        #
+        # Stronger than generic T7.
+        # ====================================================
+
+        try:
+
             if looks_like_template_5(
                 raw_csv
             ):
-
-                # --------------------------------------------
-                # Header alone is not enough.
-                # Confirm actual SKU / QTY data.
-                # --------------------------------------------
 
                 header_row = find_header_row(
                     raw_csv,
@@ -8068,10 +8103,12 @@ def detect_template_type(uploaded_file):
             pass
 
 
-        # ----------------------------------------------------
-        # CSV Template 1
-        # Standard POS, header = first row
-        # ----------------------------------------------------
+        # ====================================================
+        # 3C. TEMPLATE 1
+        #
+        # Standard POS:
+        # header normally first row.
+        # ====================================================
 
         try:
 
@@ -8131,20 +8168,12 @@ def detect_template_type(uploaded_file):
             pass
 
 
-        # ----------------------------------------------------
-        # CSV Template 7
+        # ====================================================
+        # 3D. TEMPLATE 7
         # Generic SKU + QTY
-        # ----------------------------------------------------
+        # ====================================================
 
         try:
-
-            uploaded_file.seek(0)
-
-            raw_csv = read_csv_flexible(
-                uploaded_file,
-                header=None,
-            )
-
 
             header_row = find_header_row(
                 raw_csv,
@@ -8213,7 +8242,7 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # 5. Only Excel Below
+    # 4. ONLY EXCEL BELOW
     # ========================================================
 
     if suffix not in [
@@ -8226,14 +8255,14 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # 6. Read ALL Excel Worksheets
+    # 5. READ ALL EXCEL WORKSHEETS
     #
-    # This is the global multi-sheet safety layer.
+    # Global multi-sheet safety layer
     # ========================================================
 
     try:
 
-        all_sheets_raw = (
+        all_sheets = (
             read_excel_all_sheets(
                 uploaded_file,
                 header=None,
@@ -8242,10 +8271,10 @@ def detect_template_type(uploaded_file):
 
 
         if (
-            all_sheets_raw is None
+            all_sheets is None
             or
             not isinstance(
-                all_sheets_raw,
+                all_sheets,
                 dict,
             )
         ):
@@ -8253,37 +8282,61 @@ def detect_template_type(uploaded_file):
             return "UNKNOWN"
 
 
-        candidate_sheets = [
-            (
-                sheet_name,
-                raw,
-            )
-            for (
-                sheet_name,
-                raw,
-            )
-            in all_sheets_raw.items()
+        candidate_sheets = []
+
+
+        for (
+            sheet_name,
+            raw
+        ) in all_sheets.items():
+
             if (
-                raw is not None
-                and
-                not raw.empty
+                raw is None
+                or
+                raw.empty
+            ):
+
+                continue
+
+
+            raw = (
+                raw
+                .dropna(
+                    how="all"
+                )
+                .dropna(
+                    axis=1,
+                    how="all",
+                )
             )
-        ]
+
+
+            if raw.empty:
+
+                continue
+
+
+            candidate_sheets.append(
+                (
+                    sheet_name,
+                    raw,
+                )
+            )
+
+
+        if not candidate_sheets:
+
+            return "UNKNOWN"
 
 
         sheet_names = [
             sheet_name
             for (
                 sheet_name,
-                raw,
+                raw
             )
             in candidate_sheets
         ]
-
-
-        if not candidate_sheets:
-
-            return "UNKNOWN"
 
 
     except Exception:
@@ -8292,7 +8345,7 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # 7. TEMPLATE 4
+    # 6. TEMPLATE 4
     # 麥金酒
     #
     # 商品貨號 + 商品名稱
@@ -8302,7 +8355,7 @@ def detect_template_type(uploaded_file):
 
         for (
             sheet_name,
-            raw,
+            raw
         ) in candidate_sheets:
 
 
@@ -8333,7 +8386,7 @@ def detect_template_type(uploaded_file):
             )
 
 
-            has_template_4_header = False
+            header_found = False
 
 
             for i in range(
@@ -8356,13 +8409,13 @@ def detect_template_type(uploaded_file):
                     "商品名稱" in values
                 ):
 
-                    has_template_4_header = True
+                    header_found = True
 
                     break
 
 
             if (
-                has_template_4_header
+                header_found
                 and
                 (
                     filename_is_maijin
@@ -8382,19 +8435,21 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # 8. TEMPLATE 5
-    # PRT Standard POS Template
+    # 7. TEMPLATE 5
+    # PRT Standard POS
     #
-    # Multi-sheet:
-    # Any worksheet containing a valid PRT structure AND actual
-    # quantity data may identify the workbook as Template 5.
+    # Examples:
+    # 康尼克 / 杜康 etc.
+    #
+    # IMPORTANT:
+    # Empty Quantity sheet is ignored.
     # ========================================================
 
     try:
 
         for (
             sheet_name,
-            raw,
+            raw
         ) in candidate_sheets:
 
 
@@ -8472,14 +8527,12 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # 9. TEMPLATE 6
+    # 8. TEMPLATE 6
     # 松賀
     #
-    # Supports:
-    # - Legacy 8-column
-    # - New 4-column
-    #
-    # Multi-sheet safe
+    # No-header:
+    # Legacy >=8 cols
+    # New =4 cols
     # ========================================================
 
     try:
@@ -8491,7 +8544,7 @@ def detect_template_type(uploaded_file):
 
             for (
                 sheet_name,
-                raw,
+                raw
             ) in candidate_sheets:
 
 
@@ -8512,7 +8565,7 @@ def detect_template_type(uploaded_file):
 
 
                 # --------------------------------------------
-                # Legacy format
+                # Legacy 8-column format
                 # --------------------------------------------
 
                 if (
@@ -8547,7 +8600,7 @@ def detect_template_type(uploaded_file):
 
 
                 # --------------------------------------------
-                # New format
+                # New 4-column format
                 # --------------------------------------------
 
                 elif (
@@ -8555,18 +8608,16 @@ def detect_template_type(uploaded_file):
                     == 4
                 ):
 
-                    sku_sample = (
+                    raw_sku = (
                         raw_check.iloc[
                             :,
                             1
                         ]
-                        .dropna()
-                        .astype(str)
                         .map(norm_text)
                     )
 
 
-                    price_sample = (
+                    price = (
                         pd.to_numeric(
                             raw_check.iloc[
                                 :,
@@ -8583,7 +8634,7 @@ def detect_template_type(uploaded_file):
                     )
 
 
-                    qty_sample = numeric(
+                    qty = numeric(
                         raw_check.iloc[
                             :,
                             3
@@ -8592,23 +8643,17 @@ def detect_template_type(uploaded_file):
 
 
                     sku_ratio = (
-                        sku_sample.ne("").mean()
-                        if len(sku_sample)
-                        else 0
+                        raw_sku.ne("").mean()
                     )
 
 
                     price_ratio = (
-                        price_sample
-                        .notna()
-                        .mean()
+                        price.notna().mean()
                     )
 
 
                     qty_ratio = (
-                        qty_sample
-                        .notna()
-                        .mean()
+                        qty.notna().mean()
                     )
 
 
@@ -8629,42 +8674,24 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # 10. TEMPLATE 8
-    # 唯君
-    #
-    # Transformer is already multi-sheet.
-    # ========================================================
-
-    if (
-        "唯君"
-        in filename_text
-    ):
-
-        return "TEMPLATE_8"
-
-
-    # ========================================================
-    # 11. TEMPLATE 3A
+    # 9. TEMPLATE 3A
     # 國泰 Multi-sheet
     #
-    # Exact:
     # 品名規格 + 數量 / 數量2
-    #
-    # Do NOT treat 淨銷數量 as Template 3A.
     # ========================================================
 
-    if (
-        len(
-            candidate_sheets
-        )
-        > 1
-    ):
+    try:
 
-        try:
+        if (
+            len(
+                candidate_sheets
+            )
+            > 1
+        ):
 
             for (
                 sheet_name,
-                raw,
+                raw
             ) in candidate_sheets:
 
 
@@ -8673,7 +8700,6 @@ def detect_template_type(uploaded_file):
                     continue
 
 
-                # Header expected on first row for T3A
                 headers = [
                     norm_col(value)
                     for value
@@ -8684,14 +8710,10 @@ def detect_template_type(uploaded_file):
                 ]
 
 
-                has_product = any(
+                has_product = (
                     norm_col(
                         "品名規格"
                     )
-                    ==
-                    header
-
-                    for header
                     in headers
                 )
 
@@ -8699,8 +8721,12 @@ def detect_template_type(uploaded_file):
                 has_qty = any(
                     header
                     in {
-                        norm_col("數量"),
-                        norm_col("數量2"),
+                        norm_col(
+                            "數量"
+                        ),
+                        norm_col(
+                            "數量2"
+                        ),
                     }
 
                     for header
@@ -8717,14 +8743,14 @@ def detect_template_type(uploaded_file):
                     return "TEMPLATE_3"
 
 
-        except Exception:
+    except Exception:
 
-            pass
+        pass
 
 
     # ========================================================
-    # 12. TEMPLATE 2
-    # Horizontal Monthly Actual Sales
+    # 10. TEMPLATE 2
+    # 洋酒城
     #
     # 商品代號 + 商品名稱 + 實銷
     # ========================================================
@@ -8733,11 +8759,11 @@ def detect_template_type(uploaded_file):
 
         for (
             sheet_name,
-            raw,
+            raw
         ) in candidate_sheets:
 
 
-            template_2_header_found = False
+            header_found = False
 
             actual_sales_found = False
 
@@ -8759,14 +8785,12 @@ def detect_template_type(uploaded_file):
 
 
                 if (
-                    "商品代號"
-                    in values
+                    "商品代號" in values
                     and
-                    "商品名稱"
-                    in values
+                    "商品名稱" in values
                 ):
 
-                    template_2_header_found = True
+                    header_found = True
 
 
                 if any(
@@ -8781,7 +8805,7 @@ def detect_template_type(uploaded_file):
 
 
             if (
-                template_2_header_found
+                header_found
                 and
                 actual_sales_found
             ):
@@ -8795,8 +8819,8 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # 13. TEMPLATE 3B
-    # Sales Detail
+    # 11. TEMPLATE 3B
+    # 加州洋酒
     #
     # 貨品名稱 + 數量
     # ========================================================
@@ -8805,7 +8829,7 @@ def detect_template_type(uploaded_file):
 
         for (
             sheet_name,
-            raw,
+            raw
         ) in candidate_sheets:
 
 
@@ -8832,10 +8856,10 @@ def detect_template_type(uploaded_file):
 
 
                 has_qty = any(
-                    (
-                        norm_key(value)
-                        ==
-                        norm_key("數量")
+                    norm_key(value)
+                    ==
+                    norm_key(
+                        "數量"
                     )
 
                     for value
@@ -8858,7 +8882,7 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # 14. TEMPLATE 9
+    # 12. TEMPLATE 9
     # 新店李 / Diageo
     #
     # 品號 + 品名規格 + 淨銷數量
@@ -8868,7 +8892,7 @@ def detect_template_type(uploaded_file):
 
         for (
             sheet_name,
-            raw,
+            raw
         ) in candidate_sheets:
 
 
@@ -8879,7 +8903,7 @@ def detect_template_type(uploaded_file):
                 )
             ):
 
-                normalized_values = [
+                values = [
                     norm_key(value)
                     for value
                     in raw.iloc[
@@ -8893,7 +8917,7 @@ def detect_template_type(uploaded_file):
                     norm_key(
                         "品號"
                     )
-                    in normalized_values
+                    in values
                 )
 
 
@@ -8901,7 +8925,7 @@ def detect_template_type(uploaded_file):
                     norm_key(
                         "品名規格"
                     )
-                    in normalized_values
+                    in values
                 )
 
 
@@ -8909,7 +8933,7 @@ def detect_template_type(uploaded_file):
                     norm_key(
                         "淨銷數量"
                     )
-                    in normalized_values
+                    in values
                 )
 
 
@@ -8930,10 +8954,10 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # 15. TEMPLATE 10
+    # 13. TEMPLATE 10
     # 名酒集
     #
-    # No-header fixed structure:
+    # No-header:
     # A = SKU
     # B = QTY
     # ========================================================
@@ -8947,32 +8971,20 @@ def detect_template_type(uploaded_file):
 
             for (
                 sheet_name,
-                raw,
+                raw
             ) in candidate_sheets:
 
 
-                raw_check = (
-                    raw
-                    .dropna(
-                        how="all"
-                    )
-                    .reset_index(
-                        drop=True
-                    )
-                )
-
-
                 if (
-                    raw_check.empty
-                    or
-                    raw_check.shape[1] < 2
+                    raw.shape[1]
+                    < 2
                 ):
 
                     continue
 
 
                 raw_sku = (
-                    raw_check.iloc[
+                    raw.iloc[
                         :,
                         0
                     ]
@@ -8981,7 +8993,7 @@ def detect_template_type(uploaded_file):
 
 
                 qty = numeric(
-                    raw_check.iloc[
+                    raw.iloc[
                         :,
                         1
                     ]
@@ -9003,7 +9015,7 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # 16. TEMPLATE 11
+    # 14. TEMPLATE 11
     # 酒江村
     #
     # 國際條碼 + 品牌 + 數量
@@ -9013,7 +9025,7 @@ def detect_template_type(uploaded_file):
 
         for (
             sheet_name,
-            raw,
+            raw
         ) in candidate_sheets:
 
 
@@ -9022,7 +9034,7 @@ def detect_template_type(uploaded_file):
                 continue
 
 
-            normalized_columns = [
+            header_values = [
                 norm_key(value)
                 for value
                 in raw.iloc[
@@ -9032,75 +9044,74 @@ def detect_template_type(uploaded_file):
             ]
 
 
-            if (
+            if not (
                 norm_key(
                     "國際條碼"
                 )
-                in normalized_columns
+                in header_values
 
                 and
 
                 norm_key(
                     "品牌"
                 )
-                in normalized_columns
+                in header_values
 
                 and
 
                 norm_key(
                     "數量"
                 )
-                in normalized_columns
+                in header_values
             ):
 
-                # --------------------------------------------
-                # Confirm quantity actually contains data
-                # --------------------------------------------
+                continue
 
-                headers = [
-                    norm_text(value)
-                    for value
-                    in raw.iloc[
-                        0
-                    ].tolist()
+
+            headers = [
+                norm_text(value)
+                for value
+                in raw.iloc[
+                    0
+                ].tolist()
+            ]
+
+
+            df_check = (
+                raw
+                .iloc[
+                    1:
                 ]
+                .copy()
+            )
 
 
-                data = (
-                    raw
-                    .iloc[
-                        1:
-                    ]
-                    .copy()
-                )
+            df_check.columns = headers
 
 
-                data.columns = headers
+            sku_col = first_matching_column(
+                df_check,
+                [
+                    "品牌",
+                ],
+            )
 
 
-                sku_col = first_matching_column(
-                    data,
-                    [
-                        "品牌",
-                    ],
-                )
+            qty_col = first_matching_column(
+                df_check,
+                [
+                    "數量",
+                ],
+            )
 
 
-                qty_col = first_matching_column(
-                    data,
-                    [
-                        "數量",
-                    ],
-                )
+            if has_valid_sku_qty_data(
+                df_check,
+                sku_col,
+                qty_col,
+            ):
 
-
-                if has_valid_sku_qty_data(
-                    data,
-                    sku_col,
-                    qty_col,
-                ):
-
-                    return "TEMPLATE_11"
+                return "TEMPLATE_11"
 
 
     except Exception:
@@ -9109,7 +9120,7 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # 17. TEMPLATE 12
+    # 15. TEMPLATE 12
     # 廣茂隆
     # ========================================================
 
@@ -9122,14 +9133,13 @@ def detect_template_type(uploaded_file):
 
             for (
                 sheet_name,
-                raw,
+                raw
             ) in candidate_sheets:
 
 
                 if (
-                    raw.empty
-                    or
-                    raw.shape[1] < 10
+                    raw.shape[1]
+                    < 10
                 ):
 
                     continue
@@ -9145,7 +9155,7 @@ def detect_template_type(uploaded_file):
                 ]
 
 
-                has_sku_header = any(
+                has_sku = any(
                     norm_key(
                         "品項名稱"
                     )
@@ -9156,12 +9166,11 @@ def detect_template_type(uploaded_file):
                 )
 
 
-                if not has_sku_header:
+                if not has_sku:
 
                     continue
 
 
-                # Column J = expected QTY
                 qty = numeric(
                     raw.iloc[
                         1:,
@@ -9181,10 +9190,8 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # 18. TEMPLATE 15
+    # 16. TEMPLATE 15
     # 精湛酒藏
-    #
-    # Transformer already supports multi-sheet.
     # ========================================================
 
     try:
@@ -9208,14 +9215,14 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # 19. TEMPLATE 16
+    # 17. TEMPLATE 16
     # Store Sales Matrix
     #
     # Product Code + Product Name
-    # QTY = column immediately right of product name.
+    # QTY = column immediately RIGHT of SKU
     #
     # Important:
-    # Check BEFORE generic Template 7.
+    # must be checked before generic T7.
     # ========================================================
 
     try:
@@ -9267,11 +9274,11 @@ def detect_template_type(uploaded_file):
 
         for (
             sheet_name,
-            raw,
+            raw
         ) in candidate_sheets:
 
 
-            template_16_header_row = None
+            header_row = None
 
 
             for i in range(
@@ -9281,7 +9288,7 @@ def detect_template_type(uploaded_file):
                 )
             ):
 
-                header_values_raw = [
+                values_raw = [
                     norm_text(value)
                     for value
                     in raw.iloc[
@@ -9290,17 +9297,17 @@ def detect_template_type(uploaded_file):
                 ]
 
 
-                header_values_norm = [
+                values_norm = [
                     norm_key(value)
                     for value
-                    in header_values_raw
+                    in values_raw
                     if norm_text(value)
                 ]
 
 
                 has_product_code = any(
                     norm_key(alias)
-                    in header_values_norm
+                    in values_norm
 
                     for alias
                     in product_code_aliases
@@ -9309,7 +9316,7 @@ def detect_template_type(uploaded_file):
 
                 has_product_name = any(
                     norm_key(alias)
-                    in header_values_norm
+                    in values_norm
 
                     for alias
                     in product_name_aliases
@@ -9322,15 +9329,12 @@ def detect_template_type(uploaded_file):
                     has_product_name
                 ):
 
-                    template_16_header_row = i
+                    header_row = i
 
                     break
 
 
-            if (
-                template_16_header_row
-                is None
-            ):
+            if header_row is None:
 
                 continue
 
@@ -9339,7 +9343,7 @@ def detect_template_type(uploaded_file):
                 norm_text(value)
                 for value
                 in raw.iloc[
-                    template_16_header_row
+                    header_row
                 ].tolist()
             ]
 
@@ -9353,9 +9357,8 @@ def detect_template_type(uploaded_file):
 
 
             # --------------------------------------------
-            # Normal QTY Header?
-            #
-            # If yes, likely generic Template 7 instead.
+            # If normal QTY header exists,
+            # this is more likely Template 7.
             # --------------------------------------------
 
             has_normal_qty_header = any(
@@ -9375,10 +9378,11 @@ def detect_template_type(uploaded_file):
 
 
             # --------------------------------------------
-            # Must match store name from filename
+            # Store name must appear in header
             # --------------------------------------------
 
             store_header_found = any(
+
                 target_store_key
                 and
                 (
@@ -9421,18 +9425,18 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # 20. TEMPLATE 7
+    # 18. TEMPLATE 7
     # Generic SKU + QTY
     #
-    # Scan EVERY worksheet.
-    # Must have actual valid quantity.
+    # Scan ALL sheets.
+    # Must contain actual SKU + QTY data.
     # ========================================================
 
     try:
 
         for (
             sheet_name,
-            raw,
+            raw
         ) in candidate_sheets:
 
 
@@ -9503,28 +9507,23 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # 21. TEMPLATE 1
-    # Standard POS Excel fallback
+    # 19. TEMPLATE 1
+    # Standard POS fallback
     #
-    # Unlike Template 7:
-    # Template 1 expects header on first row.
+    # Header expected on first row.
     #
-    # Scan every worksheet.
+    # Scan ALL worksheets.
     # ========================================================
 
     try:
 
         for (
             sheet_name,
-            raw,
+            raw
         ) in candidate_sheets:
 
 
-            if (
-                raw is None
-                or
-                raw.empty
-            ):
+            if raw.empty:
 
                 continue
 
@@ -9599,7 +9598,7 @@ def detect_template_type(uploaded_file):
 
 
     # ========================================================
-    # 22. UNKNOWN
+    # 20. UNKNOWN
     # ========================================================
 
     return "UNKNOWN"
