@@ -1702,32 +1702,78 @@ def transform_template_2(uploaded_file):
 # Example: 國泰
 # ============================================================
 def transform_template_3_multisheet(uploaded_file):
+
     meta = parse_filename(
         uploaded_file.name
     )
 
-    uploaded_file.seek(0)
-
-    excel_file = pd.ExcelFile(
-        uploaded_file
+    sheets = read_excel_all_sheets(
+        uploaded_file,
+        header=None,
     )
 
     frames = []
 
-    for sheet in excel_file.sheet_names:
-        uploaded_file.seek(0)
+    for sheet_name, raw in sheets.items():
 
-        df = pd.read_excel(
-            uploaded_file,
-            sheet_name=sheet,
-            header=0,
-        )
+        if raw is None or raw.empty:
+            continue
 
-        df = (
-            df
-            .dropna(how="all")
-            .reset_index(drop=True)
-        )
+        raw = raw.dropna(how="all").copy()
+
+        if raw.empty:
+            continue
+
+        header_row = None
+
+        for i in range(
+            min(15, len(raw))
+        ):
+
+            values = [
+                norm_text(value)
+                for value in raw.iloc[i].tolist()
+            ]
+
+            value_keys = {
+                norm_key(value)
+                for value in values
+                if norm_text(value)
+            }
+
+            has_sku = (
+                norm_key("品名規格")
+                in value_keys
+            )
+
+            has_qty = (
+                norm_key("數量")
+                in value_keys
+                or
+                norm_key("數量2")
+                in value_keys
+            )
+
+            if has_sku and has_qty:
+                header_row = i
+                break
+
+        if header_row is None:
+            continue
+
+        headers = [
+            norm_text(value)
+            for value in raw.iloc[header_row].tolist()
+        ]
+
+        df = raw.iloc[header_row + 1:].copy()
+        df.columns = headers
+        df = df.dropna(how="all")
+
+        if df.empty:
+            continue
+
+        df = df.reset_index(drop=True)
 
         sku_col = first_matching_column(
             df,
@@ -1736,92 +1782,86 @@ def transform_template_3_multisheet(uploaded_file):
 
         qty_col = first_matching_column(
             df,
-            [
-                "數量2",
-                "數量",
-            ],
+            ["數量2", "數量"],
         )
 
         customer_col = first_matching_column(
             df,
-            ["名稱"],
+            ["名稱", "客戶名稱"],
         )
 
         unit_price_col = first_matching_column(
             df,
-            [
-                "單價",
-                "價格",
-            ],
+            ["單價", "價格"],
         )
 
         total_price_col = first_matching_column(
             df,
-            [
-                "總價",
-                "金額",
-            ],
+            ["總價", "金額"],
         )
 
-        if (
-            sku_col is None
-            or qty_col is None
+        if sku_col is None or qty_col is None:
+            continue
+
+        # Sheet must contain at least one genuine SKU + numeric QTY row.
+        if not has_valid_sku_qty_data(
+            df,
+            sku_col,
+            qty_col,
         ):
             continue
 
-        temp = pd.DataFrame()
+        raw_sku = df[sku_col].map(norm_text)
+        qty = numeric(df[qty_col])
 
-        temp["RAW_SKU"] = (
-            df[sku_col]
-            .map(norm_text)
+        # Once a sheet is accepted, preserve all non-empty SKU rows,
+        # including rows whose quantity needs later audit.
+        valid = raw_sku.ne("")
+
+        source_rows = pd.Series(
+            range(
+                header_row + 2,
+                header_row + 2 + len(df),
+            ),
+            index=df.index,
         )
 
-        temp["QTY"] = numeric(
-            df[qty_col]
-        )
+        temp = pd.DataFrame({
+            "RAW_SKU": raw_sku.loc[valid].values,
+            "QTY": qty.loc[valid].values,
+            "RAW_ROW_CUSTOMER": (
+                df.loc[valid, customer_col]
+                .map(norm_text)
+                .values
+                if customer_col is not None
+                else [""] * int(valid.sum())
+            ),
+            "UNIT_PRICE": (
+                numeric(df.loc[valid, unit_price_col]).values
+                if unit_price_col is not None
+                else [pd.NA] * int(valid.sum())
+            ),
+            "TOTAL_PRICE": (
+                numeric(df.loc[valid, total_price_col]).values
+                if total_price_col is not None
+                else [pd.NA] * int(valid.sum())
+            ),
+            "SOURCE_SHEET": sheet_name,
+            "SOURCE_INNER_ROW": source_rows.loc[valid].values,
+            "SOURCE_ROW": source_rows.loc[valid].values,
+        })
 
-        temp["RAW_ROW_CUSTOMER"] = (
-            df[customer_col].map(norm_text)
-            if customer_col is not None
-            else ""
-        )
-
-        temp["UNIT_PRICE"] = (
-            numeric(df[unit_price_col])
-            if unit_price_col
-            else pd.NA
-        )
-
-        temp["TOTAL_PRICE"] = (
-            numeric(df[total_price_col])
-            if total_price_col
-            else pd.NA
-        )
-
-        temp["SOURCE_SHEET"] = sheet
-
-        temp["SOURCE_INNER_ROW"] = range(
-            2,
-            len(df) + 2,
-        )
-
-        frames.append(temp)
+        if not temp.empty:
+            frames.append(temp)
 
     if not frames:
         raise ValueError(
-            "Template 3 多工作表找不到「品名規格 / 數量2」。"
+            "Template 3A 找不到任何有效的「品名規格 / 數量」工作表。"
         )
 
     data = pd.concat(
         frames,
         ignore_index=True,
-    )
-
-    data = (
-        data[
-            data["RAW_SKU"].ne("")
-        ]
-        .reset_index(drop=True)
     )
 
     output = base_records(
@@ -1831,37 +1871,23 @@ def transform_template_3_multisheet(uploaded_file):
         uploaded_file.name,
     )
 
-    output["RAW_CUSTOMER"] = meta[
-        "FILE_RAWDATA_NAME"
-    ]
+    output["SOURCE_ROW"] = data["SOURCE_ROW"].values
+    output["SOURCE_SHEET"] = data["SOURCE_SHEET"].values
+    output["SOURCE_INNER_ROW"] = data["SOURCE_INNER_ROW"].values
 
-    output["RAW_ROW_CUSTOMER"] = data[
-        "RAW_ROW_CUSTOMER"
-    ]
+    output["RAW_CUSTOMER"] = meta["FILE_RAWDATA_NAME"]
+    output["RAW_ROW_CUSTOMER"] = data["RAW_ROW_CUSTOMER"].values
+    output["RAW_SKU"] = data["RAW_SKU"].values
+    output["QTY"] = data["QTY"].values
 
-    output["RAW_SKU"] = data[
-        "RAW_SKU"
-    ]
+    # Source price is audit-only. Final report price still uses RSP.
+    output["RAW_UNIT_PRICE"] = data["UNIT_PRICE"].values
+    output["RAW_TOTAL_PRICE"] = data["TOTAL_PRICE"].values
+    output["UNIT_PRICE"] = pd.NA
+    output["TOTAL_PRICE"] = pd.NA
 
-    output["QTY"] = data[
-        "QTY"
-    ]
-
-    output["UNIT_PRICE"] = data[
-        "UNIT_PRICE"
-    ]
-
-    output["TOTAL_PRICE"] = data[
-        "TOTAL_PRICE"
-    ]
-
-    output["SOURCE_SHEET"] = data[
-        "SOURCE_SHEET"
-    ]
-
-    output["SOURCE_INNER_ROW"] = data[
-        "SOURCE_INNER_ROW"
-    ]
+    output["SOURCE_QTY_COLUMN"] = "數量 / 數量2"
+    output["SOURCE_PRICE_COLUMN"] = "RSP_FROM_SKU_MAPPING"
 
     return output
 
@@ -1872,168 +1898,181 @@ def transform_template_3_multisheet(uploaded_file):
 # Example: 加州洋酒
 # ============================================================
 def transform_template_3_salesdetail(uploaded_file):
+
     meta = parse_filename(
         uploaded_file.name
     )
 
-    raw = read_excel_bytes(
+    sheets = read_excel_all_sheets(
         uploaded_file,
-        sheet_name=0,
         header=None,
     )
 
-    header_row = None
+    frames = []
 
-    for i in range(
-        min(
-            30,
-            len(raw),
-        )
-    ):
-        values = [
-            norm_text(x)
-            for x in raw.iloc[i].tolist()
+    for sheet_name, raw in sheets.items():
+
+        if raw is None or raw.empty:
+            continue
+
+        raw = raw.dropna(how="all").copy()
+
+        if raw.empty:
+            continue
+
+        header_row = None
+
+        for i in range(
+            min(40, len(raw))
+        ):
+
+            values = [
+                norm_text(value)
+                for value in raw.iloc[i].tolist()
+            ]
+
+            has_product = any(
+                header_matches(value, "貨品名稱")
+                for value in values
+                if norm_text(value)
+            )
+
+            has_qty = any(
+                header_matches(value, "數量")
+                or header_matches(value, "數 量")
+                for value in values
+                if norm_text(value)
+            )
+
+            if has_product and has_qty:
+                header_row = i
+                break
+
+        if header_row is None:
+            continue
+
+        headers = [
+            norm_text(value)
+            for value in raw.iloc[header_row].tolist()
         ]
 
-        has_product = (
-            "貨品名稱" in values
+        df = raw.iloc[header_row + 1:].copy()
+        df.columns = headers
+        df = df.dropna(how="all")
+
+        if df.empty:
+            continue
+
+        df = df.reset_index(drop=True)
+
+        sku_col = first_matching_column(
+            df,
+            ["貨品名稱"],
         )
 
-        has_qty = any(
-            "數" in x
-            and "量" in x
-            for x in values
+        qty_col = first_matching_column(
+            df,
+            ["數 量", "數量"],
         )
 
-        if (
-            has_product
-            and has_qty
+        unit_price_col = first_matching_column(
+            df,
+            ["單 價", "單價"],
+        )
+
+        total_price_col = first_matching_column(
+            df,
+            ["總 價", "總價"],
+        )
+
+        customer_col = first_matching_column(
+            df,
+            ["客戶名稱"],
+        )
+
+        if sku_col is None or qty_col is None:
+            continue
+
+        if not has_valid_sku_qty_data(
+            df,
+            sku_col,
+            qty_col,
         ):
-            header_row = i
-            break
+            continue
 
-    if header_row is None:
-        raise ValueError(
-            "Template 3 銷貨明細找不到表頭。"
+        raw_sku = df[sku_col].map(norm_text)
+        qty = numeric(df[qty_col])
+        valid = raw_sku.ne("")
+
+        source_rows = pd.Series(
+            range(
+                header_row + 2,
+                header_row + 2 + len(df),
+            ),
+            index=df.index,
         )
 
-    uploaded_file.seek(0)
+        temp = pd.DataFrame({
+            "SOURCE_SHEET": sheet_name,
+            "SOURCE_ROW": source_rows.loc[valid].values,
+            "SOURCE_INNER_ROW": source_rows.loc[valid].values,
+            "RAW_SKU": raw_sku.loc[valid].values,
+            "QTY": qty.loc[valid].values,
+            "RAW_ROW_CUSTOMER": (
+                df.loc[valid, customer_col]
+                .map(norm_text)
+                .values
+                if customer_col is not None
+                else [""] * int(valid.sum())
+            ),
+            "RAW_UNIT_PRICE": (
+                numeric(df.loc[valid, unit_price_col]).values
+                if unit_price_col is not None
+                else [pd.NA] * int(valid.sum())
+            ),
+            "RAW_TOTAL_PRICE": (
+                numeric(df.loc[valid, total_price_col]).values
+                if total_price_col is not None
+                else [pd.NA] * int(valid.sum())
+            ),
+        })
 
-    df = pd.read_excel(
-        uploaded_file,
-        sheet_name=0,
-        header=header_row,
-    )
+        if not temp.empty:
+            frames.append(temp)
 
-    df.columns = [
-        norm_text(c)
-        for c in df.columns
-    ]
-
-    df = (
-        df
-        .dropna(how="all")
-        .reset_index(drop=True)
-    )
-
-    sku_col = first_matching_column(
-        df,
-        [
-            "貨品名稱",
-        ],
-    )
-
-    qty_col = first_matching_column(
-        df,
-        [
-            "數 量",
-            "數量",
-        ],
-    )
-
-    unit_price_col = first_matching_column(
-        df,
-        [
-            "單 價",
-            "單價",
-        ],
-    )
-
-    total_price_col = first_matching_column(
-        df,
-        [
-            "總 價",
-            "總價",
-        ],
-    )
-
-    customer_col = first_matching_column(
-        df,
-        ["客戶名稱"],
-    )
-
-    if (
-        sku_col is None
-        or qty_col is None
-    ):
+    if not frames:
         raise ValueError(
-            "Template 3 銷貨明細找不到貨品名稱或數量。"
+            "Template 3B 找不到任何有效的「貨品名稱 / 數量」工作表。"
         )
 
-    valid = (
-        df[sku_col]
-        .map(norm_text)
-        .ne("")
-    )
-
-    df = (
-        df
-        .loc[valid]
-        .reset_index(drop=True)
+    data = pd.concat(
+        frames,
+        ignore_index=True,
     )
 
     output = base_records(
-        df,
+        data,
         meta,
         "T3_SALES_DETAIL",
         uploaded_file.name,
     )
 
-    output["SOURCE_ROW"] = range(
-        header_row + 2,
-        header_row + 2 + len(df),
-    )
+    output["SOURCE_ROW"] = data["SOURCE_ROW"].values
+    output["SOURCE_SHEET"] = data["SOURCE_SHEET"].values
+    output["SOURCE_INNER_ROW"] = data["SOURCE_INNER_ROW"].values
 
-    output["RAW_CUSTOMER"] = meta[
-        "FILE_RAWDATA_NAME"
-    ]
+    output["RAW_CUSTOMER"] = meta["FILE_RAWDATA_NAME"]
+    output["RAW_ROW_CUSTOMER"] = data["RAW_ROW_CUSTOMER"].values
+    output["RAW_SKU"] = data["RAW_SKU"].values
+    output["QTY"] = data["QTY"].values
 
-    output["RAW_ROW_CUSTOMER"] = (
-        df[customer_col].map(norm_text)
-        if customer_col
-        else ""
-    )
+    output["RAW_UNIT_PRICE"] = data["RAW_UNIT_PRICE"].values
+    output["RAW_TOTAL_PRICE"] = data["RAW_TOTAL_PRICE"].values
+    output["UNIT_PRICE"] = pd.NA
+    output["TOTAL_PRICE"] = pd.NA
 
-    output["RAW_SKU"] = (
-        df[sku_col]
-        .map(norm_text)
-    )
-
-    output["QTY"] = numeric(
-        df[qty_col]
-    )
-
-    output["UNIT_PRICE"] = (
-        numeric(df[unit_price_col])
-        if unit_price_col
-        else pd.NA
-    )
-
-    output["TOTAL_PRICE"] = (
-        numeric(df[total_price_col])
-        if total_price_col
-        else pd.NA
-    )
+    output["SOURCE_QTY_COLUMN"] = "數量"
+    output["SOURCE_PRICE_COLUMN"] = "RSP_FROM_SKU_MAPPING"
 
     return output
 
@@ -2609,426 +2648,181 @@ def transform_template_4(uploaded_file):
 
 def transform_template_5(uploaded_file):
 
-    # ========================================================
-    # 1. Parse Filename
-    # ========================================================
-
     meta = parse_filename(
         uploaded_file.name
     )
 
-
-    # ========================================================
-    # 2. Read Raw Excel
-    # ========================================================
-
-    uploaded_file.seek(0)
-
     suffix = Path(
         uploaded_file.name
     ).suffix.lower()
-    
-    
-    uploaded_file.seek(0)
 
-
+    # CSV behaves as one logical sheet; Excel scans all worksheets.
     if suffix == ".csv":
-
-        raw = read_csv_flexible(
-            uploaded_file,
-            header=None,
-        )
-
+        uploaded_file.seek(0)
+        sheets = {
+            "CSV": read_csv_flexible(
+                uploaded_file,
+                header=None,
+            )
+        }
     else:
-    
-        raw = pd.read_excel(
+        sheets = read_excel_all_sheets(
             uploaded_file,
-            sheet_name=0,
             header=None,
         )
 
+    frames = []
 
-    if raw.empty:
+    for sheet_name, raw in sheets.items():
 
-        raise ValueError(
-            "Template 5 檔案沒有資料。"
+        if raw is None or raw.empty:
+            continue
+
+        raw = raw.dropna(how="all").copy()
+
+        if raw.empty:
+            continue
+
+        header_row = find_header_row(
+            raw,
+            required_fields=[
+                "SKU",
+                "QTY",
+            ],
+            max_rows=30,
         )
 
+        if header_row is None:
+            continue
 
-    # ========================================================
-    # 3. Find Header Row
-    #
-    # 不 hardcode row 2
-    # 改成掃描前 10 列，比較安全
-    # ========================================================
-
-    header_row = None
-
-
-    for i in range(
-        min(
-            10,
-            len(raw),
-        )
-    ):
-
-        values = [
-            norm_text(value)
-            for value
-            in raw.iloc[i].tolist()
-        ]
-
-
-        has_sku = any(
-            (
-                "品項名稱" in value
-                and
-                "SKU Name" in value
-            )
-            or
-            value == "品項名稱"
-            for value
-            in values
+        df = build_dataframe_from_header(
+            raw,
+            header_row,
         )
 
+        if df.empty:
+            continue
 
-        has_qty = any(
-            (
-                "銷量" in value
-                and
-                "Quantity" in value
-            )
-            or
-            value == "銷量"
-            for value
-            in values
+        sku_col = first_matching_column(
+            df,
+            STANDARD_HEADER_MAPPING["SKU"],
         )
 
+        qty_col = first_matching_column(
+            df,
+            STANDARD_HEADER_MAPPING["QTY"],
+        )
 
-        if (
-            has_sku
-            and
-            has_qty
+        if sku_col is None or qty_col is None:
+            continue
+
+        # This prevents an empty QTY tab from being selected.
+        if not has_valid_sku_qty_data(
+            df,
+            sku_col,
+            qty_col,
         ):
+            continue
 
-            header_row = i
-            break
+        brand_col = first_matching_column(
+            df,
+            STANDARD_HEADER_MAPPING["BRAND"],
+        )
 
+        size_col = first_matching_column(
+            df,
+            STANDARD_HEADER_MAPPING["SIZE"],
+        )
 
-    if header_row is None:
+        category_col = first_matching_column(
+            df,
+            STANDARD_HEADER_MAPPING["CATEGORY"],
+        )
 
+        raw_sku = df[sku_col].map(norm_text)
+        qty = numeric(df[qty_col])
+
+        # Preserve all non-empty SKU rows after sheet-level validation.
+        valid = raw_sku.ne("")
+
+        source_rows = pd.Series(
+            range(
+                header_row + 2,
+                header_row + 2 + len(df),
+            ),
+            index=df.index,
+        )
+
+        temp = pd.DataFrame({
+            "SOURCE_SHEET": sheet_name,
+            "SOURCE_ROW": source_rows.loc[valid].values,
+            "SOURCE_INNER_ROW": source_rows.loc[valid].values,
+            "RAW_SKU": raw_sku.loc[valid].values,
+            "QTY": qty.loc[valid].values,
+            "RAW_BRAND": (
+                df.loc[valid, brand_col]
+                .map(norm_text)
+                .values
+                if brand_col is not None
+                else [""] * int(valid.sum())
+            ),
+            "RAW_SIZE": (
+                df.loc[valid, size_col]
+                .map(norm_text)
+                .values
+                if size_col is not None
+                else [""] * int(valid.sum())
+            ),
+            "RAW_CATEGORY": (
+                df.loc[valid, category_col]
+                .map(norm_text)
+                .values
+                if category_col is not None
+                else [""] * int(valid.sum())
+            ),
+            "SOURCE_QTY_COLUMN": qty_col,
+        })
+
+        if not temp.empty:
+            frames.append(temp)
+
+    if not frames:
         raise ValueError(
-            "Template 5 找不到 "
-            "「品項名稱 SKU Name / 銷量 Quantity」表頭。"
+            "Template 5 找不到任何包含有效 SKU / Quantity 資料的工作表。"
         )
 
-
-    # ========================================================
-    # 4. Read Again Using Correct Header
-    # ========================================================
-
-    uploaded_file.seek(0)
-
-
-    if suffix == ".csv":
-    
-        df = read_csv_flexible(
-            uploaded_file,
-            header=header_row,
-        )
-    
-    else:
-    
-        df = pd.read_excel(
-            uploaded_file,
-            sheet_name=0,
-            header=header_row,
-        )
-
-
-    # Clean headers
-    df.columns = [
-        norm_text(column)
-        for column
-        in df.columns
-    ]
-
-
-    df = (
-        df
-        .dropna(
-            how="all"
-        )
-        .reset_index(
-            drop=True
-        )
+    data = pd.concat(
+        frames,
+        ignore_index=True,
     )
-
-
-    # ========================================================
-    # 5. Find Required Columns
-    # ========================================================
-
-    sku_col = first_matching_column(
-        df,
-        [
-            "品項名稱 SKU Name",
-            "品項名稱",
-            "SKU Name",
-        ],
-    )
-
-
-    qty_col = first_matching_column(
-        df,
-        [
-            "銷量 Quantity",
-            "銷量",
-            "Quantity",
-        ],
-    )
-
-
-    if (
-        sku_col is None
-        or
-        qty_col is None
-    ):
-
-        raise ValueError(
-            "Template 5 找不到必要欄位。"
-            f" SKU={sku_col}, Quantity={qty_col}"
-        )
-
-
-    # ========================================================
-    # 6. Optional Columns
-    # ========================================================
-
-    brand_col = first_matching_column(
-        df,
-        [
-            "品牌名稱 Brand Name",
-            "品牌名稱",
-            "Brand Name",
-        ],
-    )
-
-
-    size_col = first_matching_column(
-        df,
-        [
-            "規格 Size (ml)",
-            "Size (ml)",
-            "規格",
-            "容量",
-        ],
-    )
-
-
-    category_col = first_matching_column(
-        df,
-        [
-            "品類 Category",
-            "Category",
-            "品類",
-        ],
-    )
-
-
-
-
-    # ========================================================
-    # 7. Keep Valid SKU Rows
-    # ========================================================
-
-    valid = (
-        df[
-            sku_col
-        ]
-        .map(
-            norm_text
-        )
-        .ne("")
-    )
-
-
-    df = (
-        df.loc[
-            valid
-        ]
-        .reset_index(
-            drop=True
-        )
-    )
-
-
-    # ========================================================
-    # 8. Build Standard Output
-    # ========================================================
 
     output = base_records(
-        df,
+        data,
         meta,
         "T5_POS_HEADER_ROW_2",
         uploaded_file.name,
     )
 
+    output["SOURCE_ROW"] = data["SOURCE_ROW"].values
+    output["SOURCE_SHEET"] = data["SOURCE_SHEET"].values
+    output["SOURCE_INNER_ROW"] = data["SOURCE_INNER_ROW"].values
 
-    # ========================================================
-    # 9. Correct Excel Source Row
-    #
-    # header_row is zero-based.
-    #
-    # Example:
-    # header_row = 1
-    # first data row = Excel row 3
-    # ========================================================
+    output["RAW_CUSTOMER"] = meta["FILE_RAWDATA_NAME"]
+    output["RAW_ROW_CUSTOMER"] = ""
 
-    output[
-        "SOURCE_ROW"
-    ] = range(
-        header_row + 2,
-        header_row + 2 + len(df),
-    )
+    output["RAW_SKU"] = data["RAW_SKU"].values
+    output["QTY"] = data["QTY"].values
+    output["RAW_BRAND"] = data["RAW_BRAND"].values
+    output["RAW_SIZE"] = data["RAW_SIZE"].values
+    output["RAW_CATEGORY"] = data["RAW_CATEGORY"].values
 
+    output["UNIT_PRICE"] = pd.NA
+    output["TOTAL_PRICE"] = pd.NA
 
-    output[
-        "SOURCE_SHEET"
-    ] = "POS公版"
-
-
-    # ========================================================
-    # 10. Customer
-    # ========================================================
-
-    output[
-        "RAW_CUSTOMER"
-    ] = meta[
-        "FILE_RAWDATA_NAME"
-    ]
-
-
-    output[
-        "RAW_ROW_CUSTOMER"
-    ] = ""
-
-
-    # ========================================================
-    # 11. SKU
-    # ========================================================
-
-    output[
-        "RAW_SKU"
-    ] = (
-        df[
-            sku_col
-        ]
-        .map(
-            norm_text
-        )
-    )
-
-
-    # ========================================================
-    # 12. Quantity
-    # ========================================================
-
-    output[
-        "QTY"
-    ] = numeric(
-        df[
-            qty_col
-        ]
-    )
-
-
-    # ========================================================
-    # 15. Brand
-    # ========================================================
-
-    output[
-        "RAW_BRAND"
-    ] = (
-        df[
-            brand_col
-        ].map(
-            norm_text
-        )
-        if brand_col is not None
-        else ""
-    )
-
-
-    # ========================================================
-    # 16. Size
-    # ========================================================
-
-    output[
-        "RAW_SIZE"
-    ] = (
-        df[
-            size_col
-        ].map(
-            norm_text
-        )
-        if size_col is not None
-        else ""
-    )
-
-
-    # ========================================================
-    # 17. Category
-    # ========================================================
-
-    output[
-        "RAW_CATEGORY"
-    ] = (
-        df[
-            category_col
-        ].map(
-            norm_text
-        )
-        if category_col is not None
-        else ""
-    )
-
-
-    # ========================================================
-    # 18. Price
-    #
-    # Final price always comes from SKU Mapping RSP
-    # ========================================================
-
-    output[
-        "UNIT_PRICE"
-    ] = pd.NA
-
-
-    output[
-        "TOTAL_PRICE"
-    ] = pd.NA
-
-
-    # ========================================================
-    # 19. Audit
-    # ========================================================
-
-    output[
-        "SOURCE_QTY_COLUMN"
-    ] = qty_col
-
-
-    output[
-        "SOURCE_PRICE_COLUMN"
-    ] = (
-        "RSP_FROM_SKU_MAPPING"
-    )
-
+    output["SOURCE_QTY_COLUMN"] = data["SOURCE_QTY_COLUMN"].values
+    output["SOURCE_PRICE_COLUMN"] = "RSP_FROM_SKU_MAPPING"
 
     return output
-
-
 
 
 # ============================================================
@@ -3615,449 +3409,215 @@ def transform_template_6(uploaded_file):
 
 def transform_template_7(uploaded_file):
 
-    # ========================================================
-    # 1. Parse Filename
-    # ========================================================
-
     meta = parse_filename(
         uploaded_file.name
     )
 
+    suffix = Path(
+        uploaded_file.name
+    ).suffix.lower()
 
-    # ========================================================
-    # 2. Read Raw Excel
-    # ========================================================
-
-    uploaded_file.seek(0)
-
-    raw = pd.read_excel(
-        uploaded_file,
-        sheet_name=0,
-        header=None,
-    )
-
-
-    if raw.empty:
-
-        raise ValueError(
-            "Template 7 檔案沒有資料。"
+    if suffix == ".csv":
+        uploaded_file.seek(0)
+        sheets = {
+            "CSV": read_csv_flexible(
+                uploaded_file,
+                header=None,
+            )
+        }
+    else:
+        sheets = read_excel_all_sheets(
+            uploaded_file,
+            header=None,
         )
 
+    frames = []
 
-    # ========================================================
-    # 3. Find Header Row
-    # ========================================================
+    for sheet_name, raw in sheets.items():
 
-    header_row = find_header_row(
-        raw,
-        required_fields=[
-            "SKU",
-            "QTY",
-        ],
-        max_rows=30,
-    )
+        if raw is None or raw.empty:
+            continue
 
+        raw = raw.dropna(how="all").copy()
 
-    if header_row is None:
+        if raw.empty:
+            continue
 
-        raise ValueError(
-            "Template 7 找不到 SKU / QTY 類型表頭。"
-        )
-
-
-    # ========================================================
-    # 4. Read Again Using Correct Header
-    # ========================================================
-
-    uploaded_file.seek(0)
-
-    df = pd.read_excel(
-        uploaded_file,
-        sheet_name=0,
-        header=header_row,
-    )
-
-
-    df.columns = [
-        norm_text(column)
-        for column
-        in df.columns
-    ]
-
-
-    df = (
-        df
-        .dropna(how="all")
-        .reset_index(drop=True)
-    )
-
-
-    # ========================================================
-    # 5. Find Standard Columns
-    # ========================================================
-
-    sku_col = first_matching_column(
-        df,
-        STANDARD_HEADER_MAPPING["SKU"],
-    )
-
-
-    qty_col = first_matching_column(
-        df,
-        STANDARD_HEADER_MAPPING["QTY"],
-    )
-
-
-    customer_col = first_matching_column(
-        df,
-        STANDARD_HEADER_MAPPING["CUSTOMER"],
-    )
-
-
-    unit_price_col = first_matching_column(
-        df,
-        STANDARD_HEADER_MAPPING["UNIT_PRICE"],
-    )
-
-
-    total_price_col = first_matching_column(
-        df,
-        STANDARD_HEADER_MAPPING["TOTAL_PRICE"],
-    )
-
-
-    brand_col = first_matching_column(
-        df,
-        STANDARD_HEADER_MAPPING["BRAND"],
-    )
-
-
-    size_col = first_matching_column(
-        df,
-        STANDARD_HEADER_MAPPING["SIZE"],
-    )
-
-
-    category_col = first_matching_column(
-        df,
-        STANDARD_HEADER_MAPPING["CATEGORY"],
-    )
-
-
-    # ========================================================
-    # 6. Validate Required Columns
-    # ========================================================
-
-    if (
-        sku_col is None
-        or
-        qty_col is None
-    ):
-
-        raise ValueError(
-            "Template 7 找不到必要欄位。"
-            f" SKU={sku_col}, Quantity={qty_col}"
-        )
-
-
-    # ========================================================
-    # 7. Prepare SKU / QTY
-    # ========================================================
-
-    raw_sku = (
-        df[
-            sku_col
-        ]
-        .map(
-            norm_text
-        )
-    )
-
-
-    qty = numeric(
-        df[
-            qty_col
-        ]
-    )
-
-
-# ========================================================
-    # 8. Keep Valid Product Rows
-    # ========================================================
-    
-    valid = (
-        raw_sku
-        .ne("")
-    )
-    
-    
-    # ========================================================
-    # 駱北 / 全億 ONLY
-    # 只保留「單位 = 瓶 / 盒」
-    # ========================================================
-    
-    filename_text = norm_text(
-        Path(
-            uploaded_file.name
-        ).stem
-    )
-    
-    
-    if (
-        "駱北" in filename_text
-        or
-        "全億" in filename_text
-    ):
-    
-        unit_col = first_matching_column(
-            df,
-            [
-                "單位",
-                "Unit",
+        header_row = find_header_row(
+            raw,
+            required_fields=[
+                "SKU",
+                "QTY",
             ],
+            max_rows=40,
         )
-    
-    
-        if unit_col is None:
-    
-            raise ValueError(
-                "Template 7｜駱北 / 全億 "
-                "找不到「單位」欄位。"
-            )
-    
-    
-        valid = (
-            valid
-            &
-            df[unit_col]
-            .map(norm_text)
-            .isin(
-                [
-                    "瓶",
-                    "盒",
-                    "組",
-                ]
-            )
+
+        if header_row is None:
+            continue
+
+        df = build_dataframe_from_header(
+            raw,
+            header_row,
         )
-    
-    
-    # ========================================================
-    # Apply Filter
-    # ========================================================
-    
-    df = (
-        df.loc[
-            valid
-        ]
-        .reset_index(drop=True)
-    )
-    
-    
-    raw_sku = (
-        raw_sku.loc[
-            valid
-        ]
-        .reset_index(drop=True)
-    )
-    
-    
-    qty = (
-        qty.loc[
-            valid
-        ]
-        .reset_index(drop=True)
-    )
 
+        if df.empty:
+            continue
 
-    # ========================================================
-    # 9. Create Output
-    # ========================================================
+        sku_col = first_matching_column(
+            df,
+            STANDARD_HEADER_MAPPING["SKU"],
+        )
+
+        qty_col = first_matching_column(
+            df,
+            STANDARD_HEADER_MAPPING["QTY"],
+        )
+
+        if sku_col is None or qty_col is None:
+            continue
+
+        if not has_valid_sku_qty_data(
+            df,
+            sku_col,
+            qty_col,
+        ):
+            continue
+
+        customer_col = first_matching_column(
+            df,
+            STANDARD_HEADER_MAPPING["CUSTOMER"],
+        )
+
+        unit_price_col = first_matching_column(
+            df,
+            STANDARD_HEADER_MAPPING["UNIT_PRICE"],
+        )
+
+        total_price_col = first_matching_column(
+            df,
+            STANDARD_HEADER_MAPPING["TOTAL_PRICE"],
+        )
+
+        brand_col = first_matching_column(
+            df,
+            STANDARD_HEADER_MAPPING["BRAND"],
+        )
+
+        size_col = first_matching_column(
+            df,
+            STANDARD_HEADER_MAPPING["SIZE"],
+        )
+
+        category_col = first_matching_column(
+            df,
+            STANDARD_HEADER_MAPPING["CATEGORY"],
+        )
+
+        raw_sku = df[sku_col].map(norm_text)
+        qty = numeric(df[qty_col])
+
+        # Do not filter by unit. Case/box sales are retained for audit.
+        valid = raw_sku.ne("")
+
+        source_rows = pd.Series(
+            range(
+                header_row + 2,
+                header_row + 2 + len(df),
+            ),
+            index=df.index,
+        )
+
+        temp = pd.DataFrame({
+            "SOURCE_SHEET": sheet_name,
+            "SOURCE_ROW": source_rows.loc[valid].values,
+            "SOURCE_INNER_ROW": source_rows.loc[valid].values,
+            "RAW_SKU": raw_sku.loc[valid].values,
+            "QTY": qty.loc[valid].values,
+            "RAW_ROW_CUSTOMER": (
+                df.loc[valid, customer_col]
+                .map(norm_text)
+                .values
+                if customer_col is not None
+                else [""] * int(valid.sum())
+            ),
+            "RAW_BRAND": (
+                df.loc[valid, brand_col]
+                .map(norm_text)
+                .values
+                if brand_col is not None
+                else [""] * int(valid.sum())
+            ),
+            "RAW_SIZE": (
+                df.loc[valid, size_col]
+                .map(norm_text)
+                .values
+                if size_col is not None
+                else [""] * int(valid.sum())
+            ),
+            "RAW_CATEGORY": (
+                df.loc[valid, category_col]
+                .map(norm_text)
+                .values
+                if category_col is not None
+                else [""] * int(valid.sum())
+            ),
+            "RAW_UNIT_PRICE": (
+                numeric(df.loc[valid, unit_price_col]).values
+                if unit_price_col is not None
+                else [pd.NA] * int(valid.sum())
+            ),
+            "RAW_TOTAL_PRICE": (
+                numeric(df.loc[valid, total_price_col]).values
+                if total_price_col is not None
+                else [pd.NA] * int(valid.sum())
+            ),
+            "SOURCE_QTY_COLUMN": qty_col,
+        })
+
+        if not temp.empty:
+            frames.append(temp)
+
+    if not frames:
+        raise ValueError(
+            "Template 7 找不到任何包含有效 SKU / QTY 資料的工作表。"
+        )
+
+    data = pd.concat(
+        frames,
+        ignore_index=True,
+    )
 
     output = base_records(
-        df,
+        data,
         meta,
         "T7_TRANSACTION_DETAIL",
         uploaded_file.name,
     )
 
+    output["SOURCE_ROW"] = data["SOURCE_ROW"].values
+    output["SOURCE_SHEET"] = data["SOURCE_SHEET"].values
+    output["SOURCE_INNER_ROW"] = data["SOURCE_INNER_ROW"].values
 
-    # ========================================================
-    # 10. Source Information
-    # ========================================================
+    output["RAW_CUSTOMER"] = meta["FILE_RAWDATA_NAME"]
+    output["RAW_ROW_CUSTOMER"] = data["RAW_ROW_CUSTOMER"].values
+    output["RAW_SKU"] = data["RAW_SKU"].values
+    output["QTY"] = data["QTY"].values
 
-    output[
-        "SOURCE_ROW"
-    ] = range(
-        header_row + 2,
-        header_row + 2 + len(df),
-    )
+    output["RAW_BRAND"] = data["RAW_BRAND"].values
+    output["RAW_SIZE"] = data["RAW_SIZE"].values
+    output["RAW_CATEGORY"] = data["RAW_CATEGORY"].values
 
+    output["RAW_UNIT_PRICE"] = data["RAW_UNIT_PRICE"].values
+    output["RAW_TOTAL_PRICE"] = data["RAW_TOTAL_PRICE"].values
 
-    output[
-        "SOURCE_SHEET"
-    ] = "工作表1"
+    output["UNIT_PRICE"] = pd.NA
+    output["TOTAL_PRICE"] = pd.NA
 
-
-    # ========================================================
-    # 11. Customer
-    # ========================================================
-
-    output[
-        "RAW_CUSTOMER"
-    ] = meta[
-        "FILE_RAWDATA_NAME"
-    ]
-
-
-    output[
-        "RAW_ROW_CUSTOMER"
-    ] = (
-        df[
-            customer_col
-        ]
-        .map(
-            norm_text
-        )
-        if customer_col is not None
-        else ""
-    )
-
-
-    # ========================================================
-    # 12. SKU
-    # ========================================================
-
-    output[
-        "RAW_SKU"
-    ] = raw_sku
-
-
-    # ========================================================
-    # 13. Quantity
-    # ========================================================
-
-    output[
-        "QTY"
-    ] = qty
-
-
-    # ========================================================
-    # 15. Brand
-    # ========================================================
-
-    output[
-        "RAW_BRAND"
-    ] = (
-        df[
-            brand_col
-        ]
-        .map(
-            norm_text
-        )
-        if brand_col is not None
-        else ""
-    )
-
-
-    # ========================================================
-    # 16. Size
-    # ========================================================
-
-    output[
-        "RAW_SIZE"
-    ] = (
-        df[
-            size_col
-        ]
-        .map(
-            norm_text
-        )
-        if size_col is not None
-        else ""
-    )
-
-
-    # ========================================================
-    # 17. Category
-    # ========================================================
-
-    output[
-        "RAW_CATEGORY"
-    ] = (
-        df[
-            category_col
-        ]
-        .map(
-            norm_text
-        )
-        if category_col is not None
-        else ""
-    )
-
-
-    # ========================================================
-    # 18. Original Price
-    # Audit only
-    # ========================================================
-
-    output[
-        "RAW_UNIT_PRICE"
-    ] = (
-        numeric(
-            df[
-                unit_price_col
-            ]
-        )
-        if unit_price_col is not None
-        else pd.NA
-    )
-
-
-    output[
-        "RAW_TOTAL_PRICE"
-    ] = (
-        numeric(
-            df[
-                total_price_col
-            ]
-        )
-        if total_price_col is not None
-        else pd.NA
-    )
-
-
-    # ========================================================
-    # 19. Final Price
-    # Final Report uses SKU Mapping RSP
-    # ========================================================
-
-    output[
-        "UNIT_PRICE"
-    ] = pd.NA
-
-
-    output[
-        "TOTAL_PRICE"
-    ] = pd.NA
-
-
-    # ========================================================
-    # 20. Audit
-    # ========================================================
-
-    output[
-        "SOURCE_QTY_COLUMN"
-    ] = qty_col
-
-
-    output[
-        "SOURCE_PRICE_COLUMN"
-    ] = (
-        "RSP_FROM_SKU_MAPPING"
-    )
-
+    output["SOURCE_QTY_COLUMN"] = data["SOURCE_QTY_COLUMN"].values
+    output["SOURCE_PRICE_COLUMN"] = "RSP_FROM_SKU_MAPPING"
 
     return output
+
 
 # ============================================================
 # TEMPLATE 8
@@ -8830,54 +8390,54 @@ def auto_transform_template(
 
     # ========================================================
     # TEMPLATE 3
+    #
+    # Do NOT decide 3A/3B merely by worksheet count.
+    # Try the specific T3A structure first; if no valid T3A
+    # worksheet exists, then try T3B across all worksheets.
     # ========================================================
 
     elif template_type == "TEMPLATE_3":
 
-        uploaded_file.seek(0)
+        t3a_error = None
 
-        excel_file = pd.ExcelFile(
-            uploaded_file
-        )
+        try:
 
+            uploaded_file.seek(0)
 
-        # Template 3A - Multi-sheet
-        if len(
-            excel_file.sheet_names
-        ) > 1:
-
-            try:
-
-                uploaded_file.seek(0)
-
-                result = (
-                    transform_template_3_multisheet(
-                        uploaded_file
-                    )
-                )
-
-                return (
-                    result,
-                    "Template 3A｜多工作表銷售明細",
-                )
-
-            except Exception:
-                pass
-
-
-        # Template 3B - Single-sheet
-        uploaded_file.seek(0)
-
-        result = (
-            transform_template_3_salesdetail(
+            result = transform_template_3_multisheet(
                 uploaded_file
             )
-        )
 
-        return (
-            result,
-            "Template 3B｜單工作表銷貨明細",
-        )
+            return (
+                result,
+                "Template 3A｜品名規格 / 數量多工作表銷售明細",
+            )
+
+        except Exception as e:
+
+            t3a_error = e
+
+
+        try:
+
+            uploaded_file.seek(0)
+
+            result = transform_template_3_salesdetail(
+                uploaded_file
+            )
+
+            return (
+                result,
+                "Template 3B｜貨品名稱 / 數量銷貨明細",
+            )
+
+        except Exception as t3b_error:
+
+            raise ValueError(
+                "Template 3 無法轉換。"
+                f" T3A={t3a_error};"
+                f" T3B={t3b_error}"
+            )
 
 
     # ========================================================
