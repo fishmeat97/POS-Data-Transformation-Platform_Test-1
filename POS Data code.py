@@ -12344,39 +12344,6 @@ raw_all = pd.concat(
     sort=False,
 )
 
-debug_weijun = raw_all[
-    raw_all[
-        "SOURCE_FILE"
-    ].astype(str).str.contains(
-        "唯君",
-        na=False,
-    )
-].copy()
-
-
-st.write(
-    "DEBUG 唯君 transform output"
-)
-
-
-st.dataframe(
-    debug_weijun[
-        [
-            column
-            for column
-            in [
-                "SOURCE_FILE",
-                "SOURCE_SHEET",
-                "SOURCE_ROW",
-                "RAW_SKU",
-                "QTY",
-            ]
-            if column
-            in debug_weijun.columns
-        ]
-    ],
-    use_container_width=True,
-)
 # ============================================================
 # Customer Mapping
 # ============================================================
