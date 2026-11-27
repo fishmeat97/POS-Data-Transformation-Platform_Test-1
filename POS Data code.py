@@ -8448,15 +8448,11 @@ def transform_template_17(uploaded_file):
 
         (?P<unit>
             瓶|
-            罐|
             支|
-            箱|
             盒|
             組|
             套|
-            條|
             個|
-            筆|
             入|
             桶
         )
