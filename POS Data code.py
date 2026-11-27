@@ -4816,35 +4816,21 @@ def transform_template_8(uploaded_file):
 
 
         # ====================================================
-        # Remove adjacent duplicates
+       # ====================================================
+        # Preserve all SKU parts
+        #
+        # Do NOT automatically remove duplicate text here.
+        # Duplicate-looking values may be legitimate source data.
         # ====================================================
-
-        cleaned_parts = []
-
-
-        for part in parts:
-
-            if (
-                not cleaned_parts
-                or
-                part != cleaned_parts[-1]
-            ):
-
-                cleaned_parts.append(
-                    part
-                )
-
-
+        
         sku = norm_text(
             " ".join(
-                cleaned_parts
+                parts
             )
         )
-
-
+        
+        
         return sku
-
-
     # ========================================================
     # 5. Process Every Sheet
     # ========================================================
