@@ -239,7 +239,7 @@ def clean_file_label(filename):
     stem = re.sub(r"\(\d+\)$", "", stem).strip()
     return stem
 
-def select_month_sheets(
+def select_target_month_sheets(
     sheets,
     meta,
 ):
