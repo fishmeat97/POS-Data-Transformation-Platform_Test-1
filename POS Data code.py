@@ -12562,26 +12562,6 @@ store_reconciliation[
 )
 
 
-# ============================================================
-# TEMP DEBUG PREVIEW
-# 先放這裡確認，之後再移到 Dashboard
-# ============================================================
-
-st.warning(
-    "DEBUG：Store Reconciliation 已執行"
-)
-
-st.write(
-    "store_reconciliation rows:",
-    len(store_reconciliation)
-)
-
-st.dataframe(
-    store_reconciliation,
-    use_container_width=True,
-    hide_index=True,
-)
-
 
 # ============================================================
 # Dashboard Metrics
