@@ -10302,87 +10302,235 @@ def attach_customer_mapping(
 
     return merged
 
+# ============================================================
+# SKU MAPPING JOIN
+#
+# RAW_SKU
+#   ↓
+# SKU_KEY
+#   ↓
+# SKU Mapping["SKU Name"]
+#
+# IMPORTANT:
+# - LEFT JOIN only
+# - Never delete source rows
+# - Unmapped SKU must remain
+# - Duplicate SKU mapping keys are reduced to first match
+# ============================================================
 
-    # --------------------------------------------------------
-    # Template 商品名稱
-    # RAW_SKU -> normalized SKU_KEY
-    # --------------------------------------------------------
+def attach_sku_mapping(
+    raw,
+    sku_map,
+):
+
+    # ========================================================
+    # 0. Preserve Source
+    # ========================================================
+
+    output = raw.copy()
+
+
+    source_row_count = len(
+        output
+    )
+
+
+    # ========================================================
+    # 1. Build Source SKU Key
+    # ========================================================
 
     output[
         "SKU_KEY"
     ] = (
-
         output[
             "RAW_SKU"
         ]
-
+        .fillna("")
         .map(
             norm_key
         )
     )
 
 
-    # --------------------------------------------------------
-    # LEFT JOIN
+    # ========================================================
+    # 2. Prepare SKU Mapping
     #
-    # Template RAW_SKU
-    #          ↓
-    # SKU_KEY
-    #          =
-    # Mapping SKU Name
+    # IMPORTANT:
+    # One SKU_KEY must only have ONE mapping row.
     #
-    # LEFT JOIN = unmapped source rows remain
+    # Otherwise merge may multiply source rows.
+    # ========================================================
+
+    sku_lookup = (
+        sku_map
+        .copy()
+    )
+
+
     # --------------------------------------------------------
+    # Ensure SKU_KEY exists
+    # --------------------------------------------------------
+
+    if (
+        "SKU_KEY"
+        not in sku_lookup.columns
+    ):
+
+        sku_lookup[
+            "SKU_KEY"
+        ] = (
+            sku_lookup[
+                "SKU Name"
+            ]
+            .fillna("")
+            .map(
+                norm_key
+            )
+        )
+
+
+    # --------------------------------------------------------
+    # Remove blank mapping keys
+    # --------------------------------------------------------
+
+    sku_lookup = (
+        sku_lookup[
+            sku_lookup[
+                "SKU_KEY"
+            ].ne("")
+        ]
+        .copy()
+    )
+
+
+    # --------------------------------------------------------
+    # Prevent row multiplication
+    #
+    # First mapping wins.
+    # Duplicate report can be handled separately.
+    # --------------------------------------------------------
+
+    sku_lookup = (
+        sku_lookup
+        .drop_duplicates(
+            subset=[
+                "SKU_KEY"
+            ],
+            keep="first",
+        )
+        .copy()
+    )
+
+
+    # ========================================================
+    # 3. Select Mapping Columns
+    # ========================================================
+
+    mapping_columns = [
+        "SKU_KEY",
+        "SKU Name",
+        "Mapping Name",
+        "RSP",
+        "Price Band",
+        "Manufacture",
+        "Brand",
+        "SIZE",
+        "CATEGORY",
+    ]
+
+
+    mapping_columns = [
+        column
+        for column
+        in mapping_columns
+        if column
+        in sku_lookup.columns
+    ]
+
+
+    # ========================================================
+    # 4. LEFT JOIN
+    #
+    # This MUST remain LEFT JOIN.
+    #
+    # MAPPED:
+    # source row + mapping information
+    #
+    # UNMAPPED:
+    # source row remains,
+    # mapping columns = NaN
+    # ========================================================
 
     output = output.merge(
-
-        sku_map[
-            [
-                "SKU_KEY",
-                "SKU Name",
-                "Mapping Name",
-                "RSP",
-                "Price Band",
-                "Manufacture",
-                "Brand",
-                "SIZE",
-                "CATEGORY",
-            ]
+        sku_lookup[
+            mapping_columns
         ],
-
         how="left",
-
         on="SKU_KEY",
+        validate="many_to_one",
     )
 
 
-    # --------------------------------------------------------
-    # Mapping Status
-    # --------------------------------------------------------
+    # ========================================================
+    # 5. Mapping Status
+    # ========================================================
 
-    output[
-        "SKU_MAPPING_STATUS"
-    ] = (
+    if (
+        "Mapping Name"
+        in output.columns
+    ):
 
         output[
-            "Mapping Name"
-        ]
-
-        .apply(
-
-            lambda value:
-
-            "MAPPED"
-
-            if norm_text(value)
-
-            else "UNMAPPED"
+            "SKU_MAPPING_STATUS"
+        ] = (
+            output[
+                "Mapping Name"
+            ]
+            .apply(
+                lambda value:
+                    "MAPPED"
+                    if norm_text(value)
+                    else "UNMAPPED"
+            )
         )
+
+
+    else:
+
+        output[
+            "SKU_MAPPING_STATUS"
+        ] = "UNMAPPED"
+
+
+    # ========================================================
+    # 6. Row Count Protection
+    #
+    # SKU mapping must NEVER delete or multiply rows.
+    # ========================================================
+
+    final_row_count = len(
+        output
     )
 
 
-    return output
+    if (
+        final_row_count
+        !=
+        source_row_count
+    ):
 
+        raise ValueError(
+            "SKU Mapping row count mismatch: "
+            f"Before={source_row_count:,}, "
+            f"After={final_row_count:,}"
+        )
+
+
+    # ========================================================
+    # 7. Return
+    # ========================================================
+
+    return output
 
 # ============================================================
 # Build Final Report
