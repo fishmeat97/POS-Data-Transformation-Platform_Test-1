@@ -10317,7 +10317,42 @@ def attach_sku_mapping(
 
     output = df.copy()
 
+debug_weijun_detail = detail[
+    detail[
+        "SOURCE_FILE"
+    ].astype(str).str.contains(
+        "唯君",
+        na=False,
+    )
+].copy()
 
+
+st.write(
+    "DEBUG 唯君 after mapping"
+)
+
+
+st.dataframe(
+    debug_weijun_detail[
+        [
+            column
+            for column
+            in [
+                "SOURCE_FILE",
+                "SOURCE_SHEET",
+                "SOURCE_ROW",
+                "RAW_SKU",
+                "QTY",
+                "CUSTOMER_MAPPING_STATUS",
+                "SKU_MAPPING_STATUS",
+                "Mapping Name",
+            ]
+            if column
+            in debug_weijun_detail.columns
+        ]
+    ],
+    use_container_width=True,
+)
     # --------------------------------------------------------
     # Template 商品名稱
     # RAW_SKU -> normalized SKU_KEY
