@@ -239,7 +239,166 @@ def clean_file_label(filename):
     stem = re.sub(r"\(\d+\)$", "", stem).strip()
     return stem
 
+def select_month_sheets(
+    sheets,
+    meta,
+):
 
+    """
+    If worksheet names clearly represent months,
+    keep only the worksheet matching the reporting
+    YEAR / MONTH from filename.
+
+    Example:
+
+    Filename:
+        2233_31011044_202610_31011044_承合(南豐).xlsx
+
+    Target:
+        YEAR  = 2026
+        MONTH = 10
+
+    Workbook:
+        2026 10
+        2026 09
+        2026 08
+
+    Result:
+        only "2026 10"
+
+    If no month-like worksheet matches,
+    return all sheets unchanged.
+    """
+
+    if not isinstance(
+        sheets,
+        dict,
+    ):
+
+        return sheets
+
+
+    target_year = meta.get(
+        "YEAR"
+    )
+
+    target_month = meta.get(
+        "MONTH"
+    )
+
+
+    if (
+        target_year is None
+        or
+        target_month is None
+    ):
+
+        return sheets
+
+
+    # ========================================================
+    # Possible target formats
+    # ========================================================
+
+    target_keys = {
+        f"{target_year}{target_month:02d}",
+        f"{target_year}{target_month}",
+    }
+
+
+    matched_sheets = {}
+
+
+    month_like_sheet_found = False
+
+
+    for (
+        sheet_name,
+        df
+    ) in sheets.items():
+
+        sheet_text = norm_text(
+            sheet_name
+        )
+
+
+        # ----------------------------------------------------
+        # Normalize:
+        #
+        # 2026 10   -> 202610
+        # 2026-10   -> 202610
+        # 2026_10   -> 202610
+        # 2026/10   -> 202610
+        # ----------------------------------------------------
+
+        sheet_key = re.sub(
+            r"\D",
+            "",
+            sheet_text,
+        )
+
+
+        # ----------------------------------------------------
+        # Is this worksheet itself month-like?
+        # ----------------------------------------------------
+
+        month_match = re.search(
+            r"(20\d{2})\D*([01]?\d)",
+            sheet_text,
+        )
+
+
+        if month_match:
+
+            year = int(
+                month_match.group(1)
+            )
+
+            month = int(
+                month_match.group(2)
+            )
+
+
+            if (
+                1 <= month <= 12
+            ):
+
+                month_like_sheet_found = True
+
+
+        # ----------------------------------------------------
+        # Exact target month
+        # ----------------------------------------------------
+
+        if (
+            sheet_key
+            in target_keys
+        ):
+
+            matched_sheets[
+                sheet_name
+            ] = df
+
+
+    # ========================================================
+    # Found target month
+    # → use ONLY target month sheet(s)
+    # ========================================================
+
+    if matched_sheets:
+
+        return matched_sheets
+
+
+    # ========================================================
+    # No matching month sheet
+    #
+    # Important:
+    # Do NOT delete sheets automatically.
+    # Fall back to original multi-sheet behavior.
+    # ========================================================
+
+    return sheets
 # ============================================================
 # Numeric Cleaner
 #
@@ -2886,42 +3045,107 @@ def transform_template_4(uploaded_file):
 # Final report uses SKU Mapping RSP
 # ============================================================
 
-def transform_template_5(uploaded_file):
+def transform_template_5(
+    uploaded_file
+):
 
     meta = parse_filename(
         uploaded_file.name
     )
 
+
     suffix = Path(
         uploaded_file.name
     ).suffix.lower()
 
-    # CSV behaves as one logical sheet; Excel scans all worksheets.
+
+    # ========================================================
+    # Read Source
+    # ========================================================
+
     if suffix == ".csv":
+
         uploaded_file.seek(0)
+
         sheets = {
-            "CSV": read_csv_flexible(
-                uploaded_file,
-                header=None,
-            )
+            "CSV":
+                read_csv_flexible(
+                    uploaded_file,
+                    header=None,
+                )
         }
+
+
     else:
+
         sheets = read_excel_all_sheets(
             uploaded_file,
             header=None,
         )
 
+
+        # ====================================================
+        # TEMPLATE 5 MONTH-TAB PROTECTION
+        #
+        # Example:
+        #
+        # filename:
+        # 2233_31011044_202610_31011044_承合(南豐).xlsx
+        #
+        # sheets:
+        # 2026 10
+        # 2026 09
+        # 2026 08
+        #
+        # → only keep 2026 10
+        # ====================================================
+
+        sheets = select_target_month_sheets(
+            sheets,
+            meta,
+        )
+
+
     frames = []
 
-    for sheet_name, raw in sheets.items():
 
-        if raw is None or raw.empty:
+    # ========================================================
+    # Process valid Template 5 sheets
+    # ========================================================
+
+    for (
+        sheet_name,
+        raw
+    ) in sheets.items():
+
+        if (
+            raw is None
+            or
+            raw.empty
+        ):
+
             continue
 
-        raw = raw.dropna(how="all").copy()
+
+        raw = (
+            raw
+            .dropna(
+                how="all"
+            )
+            .reset_index(
+                drop=True
+            )
+        )
+
 
         if raw.empty:
+
             continue
+
+
+        # ====================================================
+        # Find Template 5 header
+        # ====================================================
 
         header_row = find_header_row(
             raw,
@@ -2932,109 +3156,227 @@ def transform_template_5(uploaded_file):
             max_rows=30,
         )
 
+
         if header_row is None:
+
             continue
+
 
         df = build_dataframe_from_header(
             raw,
             header_row,
         )
 
+
         if df.empty:
+
             continue
+
+
+        # ====================================================
+        # Required columns
+        # ====================================================
 
         sku_col = first_matching_column(
             df,
-            STANDARD_HEADER_MAPPING["SKU"],
+            STANDARD_HEADER_MAPPING[
+                "SKU"
+            ],
         )
+
 
         qty_col = first_matching_column(
             df,
-            STANDARD_HEADER_MAPPING["QTY"],
+            STANDARD_HEADER_MAPPING[
+                "QTY"
+            ],
         )
 
-        if sku_col is None or qty_col is None:
+
+        if (
+            sku_col is None
+            or
+            qty_col is None
+        ):
+
             continue
 
-        # This prevents an empty QTY tab from being selected.
+
+        # ====================================================
+        # Sheet must contain real SKU + QTY data
+        # ====================================================
+
         if not has_valid_sku_qty_data(
             df,
             sku_col,
             qty_col,
         ):
+
             continue
+
+
+        # ====================================================
+        # Optional columns
+        # ====================================================
 
         brand_col = first_matching_column(
             df,
-            STANDARD_HEADER_MAPPING["BRAND"],
+            STANDARD_HEADER_MAPPING[
+                "BRAND"
+            ],
         )
+
 
         size_col = first_matching_column(
             df,
-            STANDARD_HEADER_MAPPING["SIZE"],
+            STANDARD_HEADER_MAPPING[
+                "SIZE"
+            ],
         )
+
 
         category_col = first_matching_column(
             df,
-            STANDARD_HEADER_MAPPING["CATEGORY"],
+            STANDARD_HEADER_MAPPING[
+                "CATEGORY"
+            ],
         )
 
-        raw_sku = df[sku_col].map(norm_text)
-        qty = numeric(df[qty_col])
 
-        # Preserve all non-empty SKU rows after sheet-level validation.
-        valid = raw_sku.ne("")
+        # ====================================================
+        # Build temporary standardized data
+        # ====================================================
 
-        source_rows = pd.Series(
-            range(
-                header_row + 2,
-                header_row + 2 + len(df),
-            ),
-            index=df.index,
+        temp = pd.DataFrame()
+
+
+        temp[
+            "SOURCE_SHEET"
+        ] = sheet_name
+
+
+        temp[
+            "SOURCE_INNER_ROW"
+        ] = range(
+            header_row + 2,
+            header_row + 2 + len(df),
         )
 
-        temp = pd.DataFrame({
-            "SOURCE_SHEET": sheet_name,
-            "SOURCE_ROW": source_rows.loc[valid].values,
-            "SOURCE_INNER_ROW": source_rows.loc[valid].values,
-            "RAW_SKU": raw_sku.loc[valid].values,
-            "QTY": qty.loc[valid].values,
-            "RAW_BRAND": (
-                df.loc[valid, brand_col]
-                .map(norm_text)
-                .values
-                if brand_col is not None
-                else [""] * int(valid.sum())
-            ),
-            "RAW_SIZE": (
-                df.loc[valid, size_col]
-                .map(norm_text)
-                .values
-                if size_col is not None
-                else [""] * int(valid.sum())
-            ),
-            "RAW_CATEGORY": (
-                df.loc[valid, category_col]
-                .map(norm_text)
-                .values
-                if category_col is not None
-                else [""] * int(valid.sum())
-            ),
-            "SOURCE_QTY_COLUMN": qty_col,
-        })
+
+        temp[
+            "RAW_SKU"
+        ] = (
+            df[
+                sku_col
+            ]
+            .map(
+                norm_text
+            )
+        )
+
+
+        temp[
+            "QTY"
+        ] = numeric(
+            df[
+                qty_col
+            ]
+        )
+
+
+        temp[
+            "RAW_BRAND"
+        ] = (
+            df[
+                brand_col
+            ]
+            .map(
+                norm_text
+            )
+            if brand_col is not None
+            else ""
+        )
+
+
+        temp[
+            "RAW_SIZE"
+        ] = (
+            df[
+                size_col
+            ]
+            .map(
+                norm_text
+            )
+            if size_col is not None
+            else ""
+        )
+
+
+        temp[
+            "RAW_CATEGORY"
+        ] = (
+            df[
+                category_col
+            ]
+            .map(
+                norm_text
+            )
+            if category_col is not None
+            else ""
+        )
+
+
+        # ====================================================
+        # Keep SKU rows
+        #
+        # Do NOT remove invalid QTY here.
+        # Once sheet is valid, preserve SKU rows for audit.
+        # ====================================================
+
+        temp = (
+            temp[
+                temp[
+                    "RAW_SKU"
+                ].ne("")
+            ]
+            .copy()
+            .reset_index(
+                drop=True
+            )
+        )
+
 
         if not temp.empty:
-            frames.append(temp)
+
+            frames.append(
+                temp
+            )
+
+
+    # ========================================================
+    # Validation
+    # ========================================================
 
     if not frames:
+
         raise ValueError(
-            "Template 5 找不到任何包含有效 SKU / Quantity 資料的工作表。"
+            "Template 5 找不到符合當月月份的有效 SKU / Quantity 工作表。"
         )
+
+
+    # ========================================================
+    # Combine
+    # ========================================================
 
     data = pd.concat(
         frames,
         ignore_index=True,
     )
+
+
+    # ========================================================
+    # Standard Output
+    # ========================================================
 
     output = base_records(
         data,
@@ -3043,27 +3385,94 @@ def transform_template_5(uploaded_file):
         uploaded_file.name,
     )
 
-    output["SOURCE_ROW"] = data["SOURCE_ROW"].values
-    output["SOURCE_SHEET"] = data["SOURCE_SHEET"].values
-    output["SOURCE_INNER_ROW"] = data["SOURCE_INNER_ROW"].values
 
-    output["RAW_CUSTOMER"] = meta["FILE_RAWDATA_NAME"]
-    output["RAW_ROW_CUSTOMER"] = ""
+    output[
+        "SOURCE_SHEET"
+    ] = data[
+        "SOURCE_SHEET"
+    ].values
 
-    output["RAW_SKU"] = data["RAW_SKU"].values
-    output["QTY"] = data["QTY"].values
-    output["RAW_BRAND"] = data["RAW_BRAND"].values
-    output["RAW_SIZE"] = data["RAW_SIZE"].values
-    output["RAW_CATEGORY"] = data["RAW_CATEGORY"].values
 
-    output["UNIT_PRICE"] = pd.NA
-    output["TOTAL_PRICE"] = pd.NA
+    output[
+        "SOURCE_INNER_ROW"
+    ] = data[
+        "SOURCE_INNER_ROW"
+    ].values
 
-    output["SOURCE_QTY_COLUMN"] = data["SOURCE_QTY_COLUMN"].values
-    output["SOURCE_PRICE_COLUMN"] = "RSP_FROM_SKU_MAPPING"
+
+    output[
+        "RAW_CUSTOMER"
+    ] = meta[
+        "FILE_RAWDATA_NAME"
+    ]
+
+
+    output[
+        "RAW_ROW_CUSTOMER"
+    ] = ""
+
+
+    output[
+        "RAW_SKU"
+    ] = data[
+        "RAW_SKU"
+    ].values
+
+
+    output[
+        "QTY"
+    ] = data[
+        "QTY"
+    ].values
+
+
+    output[
+        "RAW_BRAND"
+    ] = data[
+        "RAW_BRAND"
+    ].values
+
+
+    output[
+        "RAW_SIZE"
+    ] = data[
+        "RAW_SIZE"
+    ].values
+
+
+    output[
+        "RAW_CATEGORY"
+    ] = data[
+        "RAW_CATEGORY"
+    ].values
+
+
+    # ========================================================
+    # Price
+    # Final report uses SKU Mapping RSP
+    # ========================================================
+
+    output[
+        "UNIT_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "TOTAL_PRICE"
+    ] = pd.NA
+
+
+    output[
+        "SOURCE_QTY_COLUMN"
+    ] = "Detected per sheet"
+
+
+    output[
+        "SOURCE_PRICE_COLUMN"
+    ] = "RSP_FROM_SKU_MAPPING"
+
 
     return output
-
 
 # ============================================================
 # TEMPLATE 6
